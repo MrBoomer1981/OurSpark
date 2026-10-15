@@ -21,6 +21,7 @@ SaveResult = Literal["new", "replaced", "same", "ignored"]
 _DELIVERY_EVENTS = {
     "theme": ("theme_sent_at", "AND d.revealed_at IS NULL"),
     "exchange": ("exchanged_at", ""),
+    "card": ("exchanged_at", ""),
 }
 
 
@@ -35,6 +36,7 @@ class Day:
     date: dt.date
     theme_title: str | None
     theme_hint: str | None
+    theme_author: int | None  # кто предложил тему через /addtheme; None — тема из файла
     theme_sent_at: dt.datetime | None
     reminder_sent_at: dt.datetime | None
     revealed_at: dt.datetime | None  # вечернее событие уже было
@@ -57,6 +59,16 @@ class Submission:
     sent_at: dt.datetime
 
 
+@dataclass(frozen=True, slots=True)
+class CustomTheme:
+    """Тема из копилки /addtheme."""
+
+    id: int
+    author_id: int
+    title: str
+    hint: str
+
+
 def _iso(moment: dt.datetime) -> str:
     return moment.astimezone(dt.UTC).isoformat(timespec="seconds")
 
@@ -70,6 +82,7 @@ def _day(row: aiosqlite.Row) -> Day:
         date=dt.date.fromisoformat(row["date"]),
         theme_title=row["theme_title"],
         theme_hint=row["theme_hint"],
+        theme_author=row["theme_author"],
         theme_sent_at=_moment(row["theme_sent_at"]),
         reminder_sent_at=_moment(row["reminder_sent_at"]),
         revealed_at=_moment(row["revealed_at"]),
@@ -159,22 +172,28 @@ class Repo:
     async def ensure_day(self, day: dt.date) -> None:
         await self._run("INSERT OR IGNORE INTO days (date) VALUES (?)", day.isoformat())
 
-    async def claim_theme(self, day: dt.date, theme: Theme, at: dt.datetime) -> bool:
+    async def claim_theme(
+        self, day: dt.date, theme: Theme, at: dt.datetime, author_id: int | None = None
+    ) -> bool:
         changed = await self._run(
-            "UPDATE days SET theme_title = ?, theme_hint = ?, theme_sent_at = ? "
+            "UPDATE days SET theme_title = ?, theme_hint = ?, theme_author = ?, theme_sent_at = ? "
             "WHERE date = ? AND theme_sent_at IS NULL AND skipped = 0",
             theme.title,
             theme.hint,
+            author_id,
             _iso(at),
             day.isoformat(),
         )
         return changed == 1
 
     async def replace_theme(self, day: dt.date, old_title: str, theme: Theme) -> bool:
-        """Сменить тему, только если её никто не успел сменить и фото за день ещё нет."""
+        """Сменить тему, только если её никто не успел сменить и фото за день ещё нет.
+
+        Новая тема всегда из файла, поэтому автор темы сбрасывается.
+        """
         iso = day.isoformat()
         changed = await self._run(
-            "UPDATE days SET theme_title = ?, theme_hint = ? "
+            "UPDATE days SET theme_title = ?, theme_hint = ?, theme_author = NULL "
             "WHERE date = ? AND theme_title = ? AND revealed_at IS NULL "
             "AND NOT EXISTS (SELECT 1 FROM submissions WHERE date = ?)",
             theme.title,
@@ -356,12 +375,99 @@ class Repo:
         )
         return [dt.date.fromisoformat(row["date"]) for row in rows]
 
+    # ── Копилка тем друг для друга (/addtheme) ──
+
+    async def add_custom_theme(self, author_id: int, theme: Theme, at: dt.datetime) -> int:
+        async with self.conn.execute(
+            "INSERT INTO custom_themes (author_id, title, hint, created_at) VALUES (?, ?, ?, ?)",
+            (author_id, theme.title, theme.hint, _iso(at)),
+        ) as cursor:
+            return cursor.lastrowid or 0
+
+    async def custom_pending_count(self, author_id: int) -> int:
+        return await self._count(
+            "SELECT COUNT(*) FROM custom_themes WHERE author_id = ? AND shown_on IS NULL", author_id
+        )
+
+    async def next_custom_theme(self) -> CustomTheme | None:
+        """Самая старая тема из копилки — сначала от того, чья тема выпадала не последней."""
+        row = await self._one(
+            "SELECT id, author_id, title, hint FROM custom_themes WHERE shown_on IS NULL "
+            "ORDER BY author_id = (SELECT author_id FROM custom_themes WHERE shown_on IS NOT NULL "
+            "ORDER BY shown_on DESC, id DESC LIMIT 1), id LIMIT 1"
+        )
+        if row is None:
+            return None
+        return CustomTheme(row["id"], row["author_id"], row["title"], row["hint"])
+
+    async def mark_custom_shown(self, theme_id: int, day: dt.date) -> None:
+        await self._run("UPDATE custom_themes SET shown_on = ? WHERE id = ?", day.isoformat(), theme_id)
+
+    async def return_custom_theme(self, day: dt.date, author_id: int, title: str) -> None:
+        """Тему из копилки сменили кнопкой — она возвращается в очередь."""
+        await self._run(
+            "UPDATE custom_themes SET shown_on = NULL WHERE shown_on = ? AND author_id = ? AND title = ?",
+            day.isoformat(),
+            author_id,
+            title,
+        )
+
+    async def delete_custom_theme(self, theme_id: int, author_id: int) -> bool:
+        """Удалить свою тему из копилки, пока она не выпала."""
+        deleted = await self._run(
+            "DELETE FROM custom_themes WHERE id = ? AND author_id = ? AND shown_on IS NULL",
+            theme_id,
+            author_id,
+        )
+        return deleted == 1
+
+    # ── Реакции ──
+
+    async def get_reaction(self, day: dt.date, user_id: int) -> str | None:
+        row = await self._one(
+            "SELECT emoji FROM reactions WHERE date = ? AND user_id = ?", day.isoformat(), user_id
+        )
+        return row["emoji"] if row else None
+
+    async def set_reaction(self, day: dt.date, user_id: int, emoji: str, at: dt.datetime) -> None:
+        await self._run(
+            "INSERT INTO reactions (date, user_id, emoji, at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (date, user_id) DO UPDATE SET emoji = excluded.emoji, at = excluded.at",
+            day.isoformat(),
+            user_id,
+            emoji,
+            _iso(at),
+        )
+
+    # ── Отправленные фото: чьё фото в каком сообщении (для ответов) ──
+
+    async def remember_message(self, chat_id: int, message_id: int, day: dt.date, owner_id: int) -> None:
+        await self._run(
+            "INSERT OR REPLACE INTO sent_messages (chat_id, message_id, date, owner_id) VALUES (?, ?, ?, ?)",
+            chat_id,
+            message_id,
+            day.isoformat(),
+            owner_id,
+        )
+
+    async def message_owner(self, chat_id: int, message_id: int) -> tuple[dt.date, int] | None:
+        """День и автор фото, к которому относится сообщение, — или None, если это не фото дня."""
+        row = await self._one(
+            "SELECT date, owner_id FROM sent_messages WHERE chat_id = ? AND message_id = ?",
+            chat_id,
+            message_id,
+        )
+        return (dt.date.fromisoformat(row["date"]), row["owner_id"]) if row else None
+
     # ── Служебное (/dev) ──
 
     async def reset_day(self, day: dt.date) -> None:
-        for table in ("submissions", "theme_log", "deliveries", "days"):
-            await self._run(f"DELETE FROM {table} WHERE date = ?", day.isoformat())
+        iso = day.isoformat()
+        await self._run("UPDATE custom_themes SET shown_on = NULL WHERE shown_on = ?", iso)
+        for table in ("submissions", "theme_log", "deliveries", "reactions", "sent_messages", "days"):
+            await self._run(f"DELETE FROM {table} WHERE date = ?", iso)
 
     async def clear_history(self) -> None:
-        for table in ("submissions", "theme_log", "deliveries", "days"):
+        await self._run("UPDATE custom_themes SET shown_on = NULL")
+        for table in ("submissions", "theme_log", "deliveries", "reactions", "sent_messages", "days"):
             await self._run(f"DELETE FROM {table}")

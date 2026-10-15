@@ -14,7 +14,7 @@ from html import escape
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from bot.daily import Schedule
+    from bot.daily import Schedule, Streak
     from bot.repo import Day
     from bot.themes import Theme
 
@@ -23,6 +23,13 @@ MONTHS = (
     "июля", "августа", "сентября", "октября", "ноября", "декабря",
 )
 CAPTION_LIMIT = 900  # Telegram режет подписи длиннее 1024 символов; оставляем место под имя
+COMMENT_LIMIT = 1000
+MILESTONES = {
+    7: "🎉 Неделя подряд!",
+    30: "🎉 Месяц подряд!",
+    100: "🎉 Сто дней подряд!",
+    365: "🎉 Год подряд!",
+}
 
 
 def hhmm(moment: time) -> str:
@@ -49,6 +56,10 @@ def hours(n: int) -> str:
     return f"{n} {plural(n, 'час', 'часа', 'часов')}"
 
 
+def days(n: int) -> str:
+    return f"{n} {plural(n, 'день', 'дня', 'дней')}"
+
+
 def duration(delta: timedelta) -> str:
     minutes = max(1, round(delta.total_seconds() / 60))
     whole_hours, minutes = divmod(minutes, 60)
@@ -57,10 +68,16 @@ def duration(delta: timedelta) -> str:
     return f"{whole_hours} ч" if whole_hours else f"{minutes} мин"
 
 
+def about_day(day: date, today: date) -> str:
+    """Уточнение для старых дней: « (15 октября)»; про сегодня — пусто."""
+    return "" if day == today else f" ({day_title(day)})"
+
+
 # ── Меню команд ──
 
 COMMAND_TODAY = "Тема и статус дня"
 COMMAND_HISTORY = "Архив и серия"
+COMMAND_ADDTHEME = "Предложить тему"
 COMMAND_SETTINGS = "Расписание"
 COMMAND_HELP = "Как всё устроено"
 
@@ -114,9 +131,12 @@ def help_text(schedule: Schedule, max_rerolls: int, reminder_hours: int) -> str:
         "Новое фото заменяет прежнее, подпись к фото тоже увидит партнёр.\n"
         f"• В {hhmm(schedule.reveal)} — обмен. Фото партнёра видит только тот, кто прислал своё. "
         "Не успеваешь — можно дослать до полуночи, и обмен случится сразу.\n"
+        "• После обмена — реакции кнопками. А если ответить (reply) на фото текстом, "
+        "я перешлю его партнёру.\n"
         f"• За {hours(reminder_hours)} до обмена напомню, если фото ещё нет.\n\n"
         "/today — тема и статус дня\n"
         "/history — архив и серия\n"
+        "/addtheme — предложить тему: она выпадет в один из ближайших дней\n"
         "/settings — расписание"
     )
 
@@ -131,17 +151,30 @@ REROLL_DENIED = {
 }
 
 
-def theme_header(theme: Theme) -> str:
-    text = f"📸 <b>Тема дня — «{escape(theme.title)}»</b>"
-    return f"{text}\n{escape(theme.hint)}" if theme.hint else text
+def author_line(author: str) -> str:
+    return f"✍️ Тему предлагает {bold(author)}"
 
 
-def theme_message(theme: Theme, reveal: time) -> str:
-    return f"{theme_header(theme)}\n\nЖду фото до {hhmm(reveal)}."
+def theme_header(theme: Theme, author: str | None = None) -> str:
+    lines = [f"📸 <b>Тема дня — «{escape(theme.title)}»</b>"]
+    if theme.hint:
+        lines.append(escape(theme.hint))
+    if author:
+        lines.append(author_line(author))
+    return "\n".join(lines)
 
 
-def theme_changed(by: str, theme: Theme, reveal: time) -> str:
-    return f"🔄 {bold(by)} меняет тему.\n\n{theme_message(theme, reveal)}"
+def streak_line(n: int) -> str:
+    return f"🔥 Серия: {days(n)} подряд"
+
+
+def theme_message(theme: Theme, reveal: time, author: str | None = None, streak: int = 0) -> str:
+    text = f"{theme_header(theme, author)}\n\nЖду фото до {hhmm(reveal)}."
+    return f"{text}\n{streak_line(streak)}" if streak else text
+
+
+def theme_changed(by: str, theme: Theme, reveal: time, streak: int = 0) -> str:
+    return f"🔄 {bold(by)} меняет тему.\n\n{theme_message(theme, reveal, streak=streak)}"
 
 
 def reroll_button(left: int) -> str:
@@ -164,13 +197,20 @@ def today_until(reveal: time, left: timedelta) -> str:
 
 
 def today_status(
-    theme: Theme, *, mine: bool, partner: str, partner_has: bool, status: str, streak: int
+    theme: Theme,
+    *,
+    author: str | None,
+    mine: bool,
+    partner: str,
+    partner_has: bool,
+    status: str,
+    streak: int,
 ) -> str:
     def mark(has: bool) -> str:
         return "✅ есть" if has else "⏳ пока нет"
 
     lines = [
-        theme_header(theme),
+        theme_header(theme, author),
         "",
         f"Твоё фото: {mark(mine)}",
         f"{bold(partner)}: {mark(partner_has)}",
@@ -234,10 +274,14 @@ def photo_caption(name: str, caption: str | None) -> str:
 
 # ── Напоминание и вечер ──
 
-def reminder(title: str, reveal: time, left: timedelta, partner_waiting: str | None) -> str:
+def reminder(
+    title: str, reveal: time, left: timedelta, partner_waiting: str | None, streak: int = 0
+) -> str:
     text = f"⏰ До обмена {duration(left)}, тема — «{escape(title)}». Жду фото до {hhmm(reveal)}."
     if partner_waiting:
         text += f"\n{bold(partner_waiting)}: фото уже готово 👀"
+    if streak:
+        text += f"\n🔥 На кону серия: {days(streak)}"
     return text
 
 
@@ -259,7 +303,83 @@ def reveal_nobody(theme_at: time) -> str:
     return f"🌙 Сегодня обошлось без фото. Завтра в {hhmm(theme_at)} — новая тема."
 
 
-# ── Серия и архив ──
+# ── Вечерняя карточка ──
+
+RECORD_LINE = "🏆 Новый рекорд серии!"
+
+
+def card_header(title: str, day: date, author: str | None) -> str:
+    text = f"📸 «{escape(title)}» · {day_title(day)}"
+    return f"{text}\n{author_line(author)}" if author else text
+
+
+def card_streak_lines(streak: Streak) -> list[str]:
+    if streak.current == 0:
+        return []
+    lines = [streak_line(streak.current) if streak.current >= 2 else "✨ Первый день серии"]
+    if streak.current in MILESTONES:
+        lines.append(MILESTONES[streak.current])
+    if streak.record:
+        lines.append(RECORD_LINE)
+    return lines
+
+
+# ── Реакции и ответы ──
+
+REACTION_PROMPT = "Твоя реакция 👇"
+REACTION_SAME = "Эта реакция уже стоит"
+REACTION_TOO_EARLY = "Реакции — после обмена"
+COMMENT_SENT = "✉️ Переслано"
+COMMENT_FAILED = "😬 Не получилось переслать — попробуй ещё раз чуть позже."
+
+
+def partner_reacted(name: str, emoji: str) -> str:
+    return f"{bold(name)} ставит {emoji} твоему фото"
+
+
+def reaction_sent(emoji: str) -> str:
+    return f"Отправлено {emoji}"
+
+
+def reaction_notice(name: str, emoji: str, title: str, when: str) -> str:
+    return f"{bold(name)} ставит {emoji} твоему фото «{escape(title)}»{when}"
+
+
+def comment_notice(name: str, title: str, text: str, about_own: bool, when: str) -> str:
+    whose = "своём" if about_own else "твоём"
+    return f"💬 {bold(name)} о {whose} фото «{escape(title)}»{when}:\n{escape(text[:COMMENT_LIMIT])}"
+
+
+# ── Темы друг для друга (/addtheme) ──
+
+ADDTHEME_BAD = (
+    "Не похоже на тему 🤔 Нужно название от 2 до 50 символов, подсказка — через тире: "
+    "<code>Окно — вид из любого окна</code>.\n/cancel — отмена"
+)
+ADDTHEME_DELETE_BUTTON = "🗑 Удалить"
+ADDTHEME_DELETED = "Тема удалена из копилки 🗑"
+ADDTHEME_TOO_LATE = "Удалить уже нельзя: тема выпала или её уже удалили"
+
+
+def addtheme_prompt(pending: int) -> str:
+    text = (
+        "✍️ Напиши тему для вас двоих. Подсказку можно добавить через тире: "
+        "<code>Окно — вид из любого окна</code>.\n"
+        "Тема выпадет в один из ближайших дней, заранее её увидишь только ты."
+    )
+    if pending:
+        text += f"\nВ копилке от тебя уже: {pending}"
+    return f"{text}\n/cancel — отмена"
+
+
+def addtheme_saved(title: str, pending: int) -> str:
+    return (
+        f"✍️ Тема «{escape(title)}» в копилке. Выпадет в один из ближайших дней — "
+        f"партнёр заранее её не увидит.\nВ копилке от тебя: {pending}"
+    )
+
+
+# ── Архив ──
 
 HISTORY_EMPTY = "Архив пока пуст — первая тема ещё впереди."
 HISTORY_OLDER = "← Раньше"
@@ -268,21 +388,11 @@ HISTORY_DAY_EMPTY = "В этот день фото не было."
 HISTORY_DAY_HIDDEN = "Твоего фото в этот день нет, а фото партнёра открывается только в обмен."
 
 
-def streak_line(n: int) -> str:
-    return f"🔥 Серия: {n} {plural(n, 'день', 'дня', 'дней')} подряд"
-
-
-def exchange_summary(title: str, day: date, streak: int) -> str:
-    text = f"📸 «{escape(title)}» · {day_title(day)}"
-    if streak >= 2:
-        return f"{text}\n{streak_line(streak)}"
-    if streak == 1:
-        return f"{text}\n✨ Первый день серии"
-    return text
-
-
-def history_header(streak: int, exchanges: int) -> str:
-    return f"🗂 <b>Архив</b>\n🔥 Серия: {streak} · обменов всего: {exchanges}\n\nВыбери день:"
+def history_header(streak: int, best: int, exchanges: int) -> str:
+    return (
+        f"🗂 <b>Архив</b>\n🔥 Серия: {streak} · рекорд: {best} · обменов всего: {exchanges}"
+        "\n\nВыбери день:"
+    )
 
 
 def history_button(day: Day, photos: int, is_today: bool) -> str:
@@ -300,10 +410,9 @@ def history_button(day: Day, photos: int, is_today: bool) -> str:
     return f"{day.date:%d.%m} · {title} · {mark}"
 
 
-def history_day_footer(day: Day) -> str:
-    text = f"📸 «{escape(day.theme_title or '')}» · {day_title(day.date)}"
-    if day.exchanged_at:
-        return text
+def history_day_footer(day: Day, author: str | None) -> str:
+    """Подпись к дню без обмена (день с обменом показывается вечерней карточкой)."""
+    text = card_header(day.theme_title or "", day.date, author)
     if day.revealed_at is None:
         return f"{text}\nОбмен ещё впереди — пока здесь только твоё фото."
     return f"{text}\nОбмена в этот день не было — здесь только твоё фото."

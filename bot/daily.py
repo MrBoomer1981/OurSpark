@@ -1,12 +1,12 @@
-"""Логика дня: тема → фото → напоминание → обмен, и серия.
+"""Логика дня: тема → фото → напоминание → обмен → вечерняя карточка, и серия.
 
 Здесь же единственная реализация правила «только в обмен» — visible_photos():
 фото партнёра видно только за дни, когда обмен состоялся.
 
 Каждое событие сначала бронируется в базе (repo.claim_*), и только потом рассылается.
 Поэтому повторный вызов — из планировщика, /dev или после рестарта — ничего не дублирует.
-Кому реально ушли тема и альбом обмена, отмечается в deliveries: если бот упал посреди
-рассылки, redeliver() дошлёт остальным.
+Кому реально ушли тема, альбом обмена и карточка, отмечается в deliveries: если бот упал
+посреди рассылки, redeliver() дошлёт остальным.
 """
 
 from __future__ import annotations
@@ -32,7 +32,8 @@ from aiogram.types import (
 from loguru import logger
 
 from bot import texts
-from bot.repo import Submission, User
+from bot.repo import CustomTheme, Submission, User
+from bot.themes import Theme
 
 if TYPE_CHECKING:
     from bot.app import App
@@ -97,6 +98,13 @@ def partner_name(members: list[User], user_id: int) -> str:
     return partner.name if partner else "партнёр"
 
 
+async def user_name(app: App, user_id: int | None) -> str | None:
+    if user_id is None:
+        return None
+    member = await app.repo.get_member(user_id)
+    return member.name if member else None
+
+
 async def notify(
     app: App, chat_id: int, text: str, reply_markup: InlineKeyboardMarkup | None = None
 ) -> bool:
@@ -118,7 +126,8 @@ async def send_photos(app: App, chat_id: int, photos: list[Submission]) -> bool:
     """Прислать фото дня альбомом, а если нельзя — по одному. Возвращает то же, что notify().
 
     Telegram не кладёт сжатые фото и файлы в один альбом, поэтому смешанная пара
-    уходит двумя сообщениями.
+    уходит двумя сообщениями. Какое фото в каком сообщении — запоминаем: ответ (reply)
+    на него бот перешлёт партнёру.
     """
     if not photos:
         return True
@@ -128,24 +137,28 @@ async def send_photos(app: App, chat_id: int, photos: list[Submission]) -> bool:
     kinds = {photo.kind for photo in photos}
     try:
         if len(photos) > 1 and kinds == {"photo"}:
-            await app.bot.send_media_group(
+            sent = await app.bot.send_media_group(
                 chat_id, [InputMediaPhoto(media=p.file_id, caption=c) for p, c in pairs]
             )
         elif len(photos) > 1 and kinds == {"document"}:
-            await app.bot.send_media_group(
+            sent = await app.bot.send_media_group(
                 chat_id, [InputMediaDocument(media=p.file_id, caption=c) for p, c in pairs]
             )
         else:
+            sent = []
             for photo, caption in pairs:
                 if photo.kind == "photo":
-                    await app.bot.send_photo(chat_id, photo.file_id, caption=caption)
+                    sent.append(await app.bot.send_photo(chat_id, photo.file_id, caption=caption))
                 else:
-                    await app.bot.send_document(chat_id, photo.file_id, caption=caption)
+                    sent.append(await app.bot.send_document(chat_id, photo.file_id, caption=caption))
     except TRANSIENT_ERRORS as error:
         logger.warning("Не удалось отправить фото {}, повторим: {}", chat_id, error)
         return False
     except TelegramAPIError as error:
         logger.warning("Не удалось отправить фото {}: {}", chat_id, error)
+        return True
+    for message, photo in zip(sent, photos, strict=False):
+        await app.repo.remember_message(chat_id, message.message_id, photo.date, photo.user_id)
     return True
 
 
@@ -170,14 +183,29 @@ async def rerolls_left(app: App, day: date) -> int:
 async def send_theme(app: App, day: date) -> bool:
     """Выбрать тему дня и разослать. False — тема за этот день уже была."""
     await app.repo.ensure_day(day)
-    theme = await app.themes.pick(await app.repo.theme_history(), await app.repo.used_themes())
+    custom = await _custom_theme_due(app, day)
+    if custom is not None:
+        theme, author_id = Theme(custom.title, custom.hint), custom.author_id
+    else:
+        theme = await app.themes.pick(await app.repo.theme_history(), await app.repo.used_themes())
+        author_id = None
     now = app.now()
-    if not await app.repo.claim_theme(day, theme, now):
+    if not await app.repo.claim_theme(day, theme, now, author_id):
         return False
+    if custom is not None:
+        await app.repo.mark_custom_shown(custom.id, day)
     await app.repo.log_theme(day, theme.title, now)
     await deliver_theme(app, day)
-    logger.info("Тема на {}: «{}»", day, theme.title)
+    logger.info("Тема на {}: «{}»{}", day, theme.title, " — из копилки" if custom else "")
     return True
+
+
+async def _custom_theme_due(app: App, day: date) -> CustomTheme | None:
+    """Тема из копилки /addtheme — не чаще чем через день, по очереди от каждого автора."""
+    yesterday = await app.repo.get_day(day - timedelta(days=1))
+    if yesterday is not None and yesterday.theme_author is not None:
+        return None
+    return await app.repo.next_custom_theme()
 
 
 async def deliver_theme(app: App, day: date) -> None:
@@ -188,7 +216,8 @@ async def deliver_theme(app: App, day: date) -> None:
     schedule = await get_schedule(app)
     left = 0 if await app.repo.get_submissions(day) else await rerolls_left(app, day)
     keyboard = reroll_keyboard(day, left)
-    text = texts.theme_message(current.theme, schedule.reveal)
+    author = await user_name(app, current.theme_author)
+    text = texts.theme_message(current.theme, schedule.reveal, author, await streak(app, day))
     delivered = await app.repo.delivered_to(day, "theme")
     for member in await app.repo.members():
         if member.user_id in delivered:
@@ -220,11 +249,14 @@ async def reroll_theme(app: App, day: date, by: User) -> RerollResult:
     )
     if not await app.repo.replace_theme(day, current.theme_title, theme):
         return "race"
+    if current.theme_author is not None:  # тему из копилки сменили — она вернётся в очередь
+        await app.repo.return_custom_theme(day, current.theme_author, current.theme_title)
     await app.repo.log_theme(day, theme.title, app.now())
     schedule = await get_schedule(app)
+    text = texts.theme_changed(by.name, theme, schedule.reveal, await streak(app, day))
     keyboard = reroll_keyboard(day, left - 1)
     for member in await app.repo.members():
-        await notify(app, member.user_id, texts.theme_changed(by.name, theme, schedule.reveal), keyboard)
+        await notify(app, member.user_id, text, keyboard)
     logger.info("Тема на {} сменена по просьбе {}: «{}»", day, by.name, theme.title)
     return "ok"
 
@@ -311,16 +343,17 @@ async def send_reminders(app: App, day: date) -> bool:
     sent = {photo.user_id for photo in await app.repo.get_submissions(day)}
     schedule = await get_schedule(app)
     left = app.at(day, schedule.reveal) - app.now()
+    at_stake = await streak(app, day)
     for member in members:
         if member.user_id in sent:
             continue
         partner = partner_of(members, member.user_id)
         waiting = partner.name if partner and partner.user_id in sent else None
-        await notify(app, member.user_id, texts.reminder(title, schedule.reveal, left, waiting))
+        await notify(app, member.user_id, texts.reminder(title, schedule.reveal, left, waiting, at_stake))
     return True
 
 
-# ── Обмен ───────────────────────────────────────────────────────────────────
+# ── Обмен и вечерняя карточка ───────────────────────────────────────────────
 
 
 async def visible_photos(app: App, day: date, viewer_id: int) -> list[Submission]:
@@ -352,13 +385,63 @@ async def try_exchange(app: App, day: date) -> bool:
 
 
 async def deliver_exchange(app: App, day: date) -> None:
-    """Разослать фото обмена тем, кому они ещё не ушли. Повторный вызов безопасен."""
-    delivered = await app.repo.delivered_to(day, "exchange")
+    """Разослать фото обмена и вечернюю карточку тем, кому они ещё не ушли. Повторный вызов безопасен."""
+    photos_done = await app.repo.delivered_to(day, "exchange")
+    cards_done = await app.repo.delivered_to(day, "card")
     for member in await app.repo.members():
-        if member.user_id in delivered:
-            continue
-        if await send_photos(app, member.user_id, await visible_photos(app, day, member.user_id)):
+        if member.user_id not in photos_done:
+            if not await send_photos(app, member.user_id, await visible_photos(app, day, member.user_id)):
+                continue  # временный сбой: карточку раньше фото не шлём
             await app.repo.mark_delivered(day, member.user_id, "exchange", app.now())
+        if member.user_id not in cards_done and await send_card(app, day, member):
+            await app.repo.mark_delivered(day, member.user_id, "card", app.now())
+
+
+async def build_card(
+    app: App, day: date, viewer: User, *, archive: bool = False
+) -> tuple[str, InlineKeyboardMarkup | None]:
+    """Вечерняя карточка: шапка от ядра (тема, дата, автор, серия) и части фич (Feature.card).
+
+    archive — карточка из архива: без строк о текущей серии.
+    """
+    current = await app.repo.get_day(day)
+    title = current.theme_title if current and current.theme_title else ""
+    author = await user_name(app, current.theme_author if current else None)
+    lines = [texts.card_header(title, day, author)]
+    if not archive:
+        lines += texts.card_streak_lines(await streak_stats(app, app.today()))
+    rows: list[list[InlineKeyboardButton]] = []
+    for feature in app.features:
+        if feature.card is None:
+            continue
+        try:
+            part = await feature.card(app, day, viewer)
+        except Exception:
+            logger.exception("Карточка: часть фичи {} упала", feature.name)
+            continue
+        if part.lines:
+            lines += ["", *part.lines]
+        if part.buttons:
+            rows.append(part.buttons)
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+
+
+async def send_card(app: App, day: date, viewer: User, *, archive: bool = False) -> bool:
+    """Прислать карточку. Возвращает то же, что notify()."""
+    text, markup = await build_card(app, day, viewer, archive=archive)
+    try:
+        message = await app.bot.send_message(viewer.user_id, text, reply_markup=markup)
+    except TRANSIENT_ERRORS as error:
+        logger.warning("Не удалось прислать карточку {}, повторим: {}", viewer.user_id, error)
+        return False
+    except TelegramAPIError as error:
+        logger.warning("Не удалось прислать карточку {}: {}", viewer.user_id, error)
+        return True
+    # Ответ на карточку — это ответ про фото партнёра за этот день.
+    partner = partner_of(await app.repo.members(), viewer.user_id)
+    if partner is not None:
+        await app.repo.remember_message(viewer.user_id, message.message_id, day, partner.user_id)
+    return True
 
 
 async def reveal(app: App, day: date) -> bool:
@@ -396,10 +479,10 @@ async def close_past_day(app: App, day: date) -> None:
 
 
 async def redeliver(app: App, now: datetime) -> None:
-    """Задача ядра: дослать тему и альбом обмена тем, кому они не дошли.
+    """Задача ядра: дослать тему, альбом обмена и карточку тем, кому они не дошли.
 
     Бот мог упасть или перезапуститься посреди рассылки (например, при деплое).
-    Тему досылаем, пока не наступил вечер, альбом — в течение REDELIVERY_DAYS дней.
+    Тему досылаем, пока не наступил вечер, обмен — в течение REDELIVERY_DAYS дней.
     """
     before = now - REDELIVERY_DELAY
     today = app.local_date(now)
@@ -407,7 +490,9 @@ async def redeliver(app: App, now: datetime) -> None:
         logger.info("Досылаем тему за {}", day)
         await deliver_theme(app, day)
     since = today - timedelta(days=REDELIVERY_DAYS)
-    for day in await app.repo.undelivered_days("exchange", since, before):
+    pending = set(await app.repo.undelivered_days("exchange", since, before))
+    pending |= set(await app.repo.undelivered_days("card", since, before))
+    for day in sorted(pending):
         logger.info("Досылаем обмен за {}", day)
         await deliver_exchange(app, day)
 
@@ -415,17 +500,58 @@ async def redeliver(app: App, now: datetime) -> None:
 # ── Серия ───────────────────────────────────────────────────────────────────
 
 
-async def streak(app: App, today: date) -> int:
-    """Сколько дней подряд был обмен.
+@dataclass(frozen=True, slots=True)
+class Streak:
+    current: int  # сколько дней подряд был обмен
+    best: int  # лучшая серия за всё время
+    record: bool  # текущая серия только что побила прежний рекорд
+
+
+def compute_streak(exchanged: set[date], skipped: set[date], today: date) -> Streak:
+    """Серия и рекорд по дням с обменом.
 
     Сегодняшний день серию не рвёт, пока не закончился. Дни, которые бот проспал
-    (skipped), тоже не рвут.
+    (skipped), тоже не рвут. «Рекорд» — только когда серия обгоняет прежнюю лучшую
+    (не первую серию вообще) ровно на один день, чтобы поздравить один раз.
     """
-    exchanged, skipped = await app.repo.streak_marks()
     day = today if today in exchanged else today - timedelta(days=1)
-    count = 0
+    current = 0
     while day in exchanged or day in skipped:
         if day in exchanged:
-            count += 1
+            current += 1
         day -= timedelta(days=1)
-    return count
+    runs = _runs(exchanged, skipped)
+    best_before = max(runs[:-1] if current else runs, default=0)
+    return Streak(
+        current=current,
+        best=max(best_before, current),
+        record=best_before >= 1 and current == best_before + 1,
+    )
+
+
+def _runs(exchanged: set[date], skipped: set[date]) -> list[int]:
+    """Длины всех серий по порядку; последняя — та, что идёт сейчас (если идёт)."""
+    if not exchanged:
+        return []
+    runs, length = [], 0
+    day, last = min(exchanged), max(exchanged)
+    while day <= last:
+        if day in exchanged:
+            length += 1
+        elif day not in skipped:
+            if length:
+                runs.append(length)
+            length = 0
+        day += timedelta(days=1)
+    runs.append(length)
+    return runs
+
+
+async def streak_stats(app: App, today: date) -> Streak:
+    exchanged, skipped = await app.repo.streak_marks()
+    return compute_streak(exchanged, skipped, today)
+
+
+async def streak(app: App, today: date) -> int:
+    """Сколько дней подряд был обмен (см. compute_streak)."""
+    return (await streak_stats(app, today)).current

@@ -13,7 +13,9 @@ from bot.features import (
     fallback,
     history,
     onboarding,
+    partner_themes,
     photos,
+    reactions,
     reminder,
     settings,
 )
@@ -23,6 +25,8 @@ def build_features(config: Config) -> list[Feature]:
     features = [
         daily_theme.feature,
         photos.feature,
+        partner_themes.feature,
+        reactions.feature,
         reminder.feature,
         exchange.feature,
         history.feature,

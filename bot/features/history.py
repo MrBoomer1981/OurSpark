@@ -1,4 +1,4 @@
-"""Архив (/history) и строка с серией после каждого обмена."""
+"""Архив (/history): дни кнопками, фото за день и карточка с реакциями."""
 
 from __future__ import annotations
 
@@ -33,15 +33,6 @@ class HistoryCallback(CallbackData, prefix="history"):
     value: str  # номер страницы или дата в ISO
 
 
-async def on_exchange(app: App, day: date) -> None:
-    """Хук после обмена: строка с темой дня и серией."""
-    current = await app.repo.get_day(day)
-    title = current.theme_title if current and current.theme_title else ""
-    text = texts.exchange_summary(title, day, await daily.streak(app, app.today()))
-    for member in await app.repo.members():
-        await daily.notify(app, member.user_id, text)
-
-
 async def render_page(app: App, page: int) -> tuple[str, InlineKeyboardMarkup | None]:
     total = await app.repo.history_count()
     if total == 0:
@@ -69,7 +60,8 @@ async def render_page(app: App, page: int) -> tuple[str, InlineKeyboardMarkup | 
     if navigation:
         rows.append(navigation)
 
-    header = texts.history_header(await daily.streak(app, today), await app.repo.exchange_count())
+    stats = await daily.streak_stats(app, today)
+    header = texts.history_header(stats.current, stats.best, await app.repo.exchange_count())
     return header, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -101,12 +93,16 @@ async def on_day(
         await daily.notify(app, user.user_id, texts.HISTORY_DAY_HIDDEN if hidden else texts.HISTORY_DAY_EMPTY)
         return
     await daily.send_photos(app, user.user_id, photos)
-    await daily.notify(app, user.user_id, texts.history_day_footer(current))
+    if current.exchanged_at is not None:
+        # День с обменом — та же карточка, что вечером: реакции видны, можно поставить свою.
+        await daily.send_card(app, day, user, archive=True)
+    else:
+        author = await daily.user_name(app, current.theme_author)
+        await daily.notify(app, user.user_id, texts.history_day_footer(current, author))
 
 
 feature = Feature(
     name="history",
     router=router,
     commands=(BotCommand(command="history", description=texts.COMMAND_HISTORY),),
-    on_exchange=on_exchange,
 )

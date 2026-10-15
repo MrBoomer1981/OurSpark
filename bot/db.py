@@ -73,6 +73,40 @@ MIGRATIONS: list[str] = [
     SELECT d.date, u.user_id, 'exchange', d.exchanged_at FROM days d, users u
     WHERE d.exchanged_at IS NOT NULL;
     """,
+    # 3 — темы друг для друга (/addtheme), реакции, привязка отправленных фото к сообщениям
+    # (для ответов) и вечерняя карточка. Прошедшим обменам карточку не досылаем.
+    """
+    ALTER TABLE days ADD COLUMN theme_author INTEGER;
+
+    CREATE TABLE custom_themes (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        author_id  INTEGER NOT NULL,
+        title      TEXT NOT NULL,
+        hint       TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        shown_on   TEXT
+    );
+
+    CREATE TABLE reactions (
+        date    TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        emoji   TEXT NOT NULL,
+        at      TEXT NOT NULL,
+        PRIMARY KEY (date, user_id)
+    );
+
+    CREATE TABLE sent_messages (
+        chat_id    INTEGER NOT NULL,
+        message_id INTEGER NOT NULL,
+        date       TEXT NOT NULL,
+        owner_id   INTEGER NOT NULL,
+        PRIMARY KEY (chat_id, message_id)
+    );
+
+    INSERT INTO deliveries (date, user_id, kind, delivered_at)
+    SELECT d.date, u.user_id, 'card', d.exchanged_at FROM days d, users u
+    WHERE d.exchanged_at IS NOT NULL;
+    """,
 ]
 
 

@@ -62,6 +62,7 @@ async def cmd_today(message: Message, app: App, user: User) -> None:
         keyboard = daily.reroll_keyboard(today, await daily.rerolls_left(app, today))
     text = texts.today_status(
         current.theme,
+        author=await daily.user_name(app, current.theme_author),
         mine=user.user_id in sent,
         partner=daily.partner_name(members, user.user_id),
         partner_has=partner is not None and partner.user_id in sent,
