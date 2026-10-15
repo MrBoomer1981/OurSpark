@@ -439,6 +439,22 @@ class Repo:
             _iso(at),
         )
 
+    # ── «Открыть раньше» ──
+
+    async def add_early_vote(self, day: dt.date, user_id: int, at: dt.datetime) -> bool:
+        """Отметить согласие открыть фото раньше. False — согласие уже было."""
+        added = await self._run(
+            "INSERT OR IGNORE INTO early_open (date, user_id, at) VALUES (?, ?, ?)",
+            day.isoformat(),
+            user_id,
+            _iso(at),
+        )
+        return added == 1
+
+    async def early_votes(self, day: dt.date) -> set[int]:
+        rows = await self._all("SELECT user_id FROM early_open WHERE date = ?", day.isoformat())
+        return {row["user_id"] for row in rows}
+
     # ── Отправленные фото: чьё фото в каком сообщении (для ответов) ──
 
     async def remember_message(self, chat_id: int, message_id: int, day: dt.date, owner_id: int) -> None:
@@ -464,10 +480,10 @@ class Repo:
     async def reset_day(self, day: dt.date) -> None:
         iso = day.isoformat()
         await self._run("UPDATE custom_themes SET shown_on = NULL WHERE shown_on = ?", iso)
-        for table in ("submissions", "theme_log", "deliveries", "reactions", "sent_messages", "days"):
+        for table in ("submissions", "theme_log", "deliveries", "reactions", "sent_messages", "early_open", "days"):
             await self._run(f"DELETE FROM {table} WHERE date = ?", iso)
 
     async def clear_history(self) -> None:
         await self._run("UPDATE custom_themes SET shown_on = NULL")
-        for table in ("submissions", "theme_log", "deliveries", "reactions", "sent_messages", "days"):
+        for table in ("submissions", "theme_log", "deliveries", "reactions", "sent_messages", "early_open", "days"):
             await self._run(f"DELETE FROM {table}")

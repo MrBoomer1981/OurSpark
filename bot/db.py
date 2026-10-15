@@ -107,6 +107,15 @@ MIGRATIONS: list[str] = [
     SELECT d.date, u.user_id, 'card', d.exchanged_at FROM days d, users u
     WHERE d.exchanged_at IS NOT NULL;
     """,
+    # 4 — «Открыть раньше»: кто из пары согласился открыть фото до вечера.
+    """
+    CREATE TABLE early_open (
+        date    TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        at      TEXT NOT NULL,
+        PRIMARY KEY (date, user_id)
+    );
+    """,
 ]
 
 

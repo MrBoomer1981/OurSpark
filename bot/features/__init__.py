@@ -9,6 +9,7 @@ from bot.feature import Feature
 from bot.features import (
     daily_theme,
     dev,
+    early_open,
     exchange,
     fallback,
     history,
@@ -25,6 +26,7 @@ def build_features(config: Config) -> list[Feature]:
     features = [
         daily_theme.feature,
         photos.feature,
+        early_open.feature,
         partner_themes.feature,
         reactions.feature,
         reminder.feature,

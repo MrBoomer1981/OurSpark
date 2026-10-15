@@ -51,10 +51,15 @@ REDELIVERY_DAYS = 2
 TRANSIENT_ERRORS = (TelegramNetworkError, TelegramRetryAfter, TelegramServerError)
 
 RerollResult = Literal["ok", "stale", "has_photo", "limit", "race"]
+EarlyResult = Literal["opened", "waiting", "already", "not_ready", "too_late"]
 
 
 class RerollCallback(CallbackData, prefix="reroll"):
     day: str  # дата в ISO: кнопка из вчерашнего сообщения не меняет сегодняшнюю тему
+
+
+class EarlyOpenCallback(CallbackData, prefix="early"):
+    day: str  # дата в ISO
 
 
 # ── Расписание ──────────────────────────────────────────────────────────────
@@ -322,12 +327,63 @@ async def submit_photo(app: App, message: Message, user: User) -> None:
         return
 
     replaced = result == "replaced"
-    reply = texts.photo_replaced(schedule.reveal) if replaced else texts.photo_accepted(schedule.reveal)
+    # Оба фото на месте — к ответам добавляется кнопка «Открыть сейчас» (откроется, если согласны оба).
+    both = len(await app.repo.get_submissions(day)) >= PAIR_SIZE
+    if both:
+        reply = texts.photo_replaced_both(schedule.reveal) if replaced else texts.photo_accepted_both(schedule.reveal)
+        voted = user.user_id in await app.repo.early_votes(day)
+        keyboard = None if voted else early_open_keyboard(day)
+    else:
+        reply = texts.photo_replaced(schedule.reveal) if replaced else texts.photo_accepted(schedule.reveal)
+        keyboard = None
     if message.media_group_id:
         reply += texts.ALBUM_NOTE
-    await message.answer(reply)
+    await message.answer(reply, reply_markup=keyboard)
     if first_photo and partner:
-        await notify(app, partner.user_id, texts.partner_photo_waiting(user.name))
+        if both:
+            text = texts.partner_photo_ready_both(user.name, schedule.reveal)
+            await notify(app, partner.user_id, text, early_open_keyboard(day))
+        else:
+            await notify(app, partner.user_id, texts.partner_photo_waiting(user.name))
+
+
+# ── Открыть раньше (если согласны оба) ──────────────────────────────────────
+
+
+def early_open_keyboard(day: date) -> InlineKeyboardMarkup:
+    button = InlineKeyboardButton(
+        text=texts.EARLY_OPEN_BUTTON, callback_data=EarlyOpenCallback(day=day.isoformat()).pack()
+    )
+    return InlineKeyboardMarkup(inline_keyboard=[[button]])
+
+
+async def request_early_open(app: App, day: date, by: User) -> EarlyResult:
+    """Согласие открыть фото до вечера. Обмен — только когда согласны оба.
+
+    Сначала ставим revealed_at (вечер наступил раньше), потом обмен: так вечернее событие
+    и напоминание этот день пропускают, а «обмен был» всегда означает «вечер был».
+    """
+    current = await app.repo.get_day(day)
+    if current is None or current.exchanged_at is not None or current.revealed_at is not None:
+        return "too_late"
+    if len(await app.repo.get_submissions(day)) < PAIR_SIZE:
+        return "not_ready"
+    new_vote = await app.repo.add_early_vote(day, by.user_id, app.now())
+    members = await app.repo.members()
+    votes = await app.repo.early_votes(day)
+    if all(member.user_id in votes for member in members):
+        if await app.repo.claim_reveal(day, app.now()):
+            await try_exchange(app, day)
+        logger.info("Обмен за {} открыт раньше: согласны оба", day)
+        return "opened"
+    if not new_vote:
+        return "already"
+    partner = partner_of(members, by.user_id)
+    if partner is not None:
+        schedule = await get_schedule(app)
+        text = texts.early_open_request(by.name, schedule.reveal)
+        await notify(app, partner.user_id, text, early_open_keyboard(day))
+    return "waiting"
 
 
 # ── Напоминание ─────────────────────────────────────────────────────────────
@@ -450,6 +506,9 @@ async def reveal(app: App, day: date) -> bool:
         return False
     if await try_exchange(app, day):
         return True
+    current = await app.repo.get_day(day)
+    if current is not None and current.exchanged_at is not None:
+        return True  # обмен уже был (например, открыли раньше) — вечером писать нечего
     members = await app.repo.members()
     sent = {photo.user_id for photo in await app.repo.get_submissions(day)}
     schedule = await get_schedule(app)

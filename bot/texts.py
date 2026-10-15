@@ -131,6 +131,7 @@ def help_text(schedule: Schedule, max_rerolls: int, reminder_hours: int) -> str:
         "Новое фото заменяет прежнее, подпись к фото тоже увидит партнёр.\n"
         f"• В {hhmm(schedule.reveal)} — обмен. Фото партнёра видит только тот, кто прислал своё. "
         "Не успеваешь — можно дослать до полуночи, и обмен случится сразу.\n"
+        "• Если фото уже у обоих, можно открыть раньше — когда вы оба нажмёте «Открыть сейчас».\n"
         "• После обмена — реакции кнопками. А если ответить (reply) на фото текстом, "
         "я перешлю его партнёру.\n"
         f"• За {hours(reminder_hours)} до обмена напомню, если фото ещё нет.\n\n"
@@ -270,6 +271,50 @@ def photo_caption(name: str, caption: str | None) -> str:
     if caption:
         text += f"\n{escape(caption[:CAPTION_LIMIT])}"
     return text
+
+
+# ── Открыть раньше (если согласны оба) ──
+
+EARLY_OPEN_BUTTON = "🔓 Открыть сейчас"
+EARLY_OPENED = "Открываем! 📸"
+EARLY_NOT_READY = "Открыть можно, когда фото есть у обоих"
+EARLY_TOO_LATE = "Обмен уже был"
+EARLY_HINT = "📸 Оба фото на месте — можно открыть раньше, если вы оба нажмёте «Открыть сейчас»."
+
+
+def both_ready(reveal: time) -> str:
+    return f"Оба фото на месте 📸 Обмен в {hhmm(reveal)} — или раньше, если вы оба нажмёте «Открыть сейчас»."
+
+
+def photo_accepted_both(reveal: time) -> str:
+    return f"✅ Принято! {both_ready(reveal)}"
+
+
+def photo_replaced_both(reveal: time) -> str:
+    return f"🔄 Фото заменено. {both_ready(reveal)}"
+
+
+def partner_photo_ready_both(name: str, reveal: time) -> str:
+    return f"👀 {bold(name)}: фото готово. {both_ready(reveal)}"
+
+
+def early_open_request(name: str, reveal: time) -> str:
+    return (
+        f"🔓 {bold(name)} хочет открыть фото сейчас. Нажми «Открыть сейчас» — и обмен случится сразу. "
+        f"Или подождите до {hhmm(reveal)}."
+    )
+
+
+def early_waiting(partner: str) -> str:
+    return f"Ждём, пока {partner} тоже нажмёт"  # ответ на нажатие кнопки — без HTML
+
+
+def early_partner_wants(partner: str) -> str:
+    return f"🔓 {bold(partner)} хочет открыть фото сейчас — нажми, и обмен случится сразу."
+
+
+def early_you_wait(partner: str) -> str:
+    return f"🔓 Твоё согласие открыть раньше есть — ждём, пока {bold(partner)} тоже нажмёт."
 
 
 # ── Напоминание и вечер ──

@@ -51,15 +51,25 @@ async def cmd_today(message: Message, app: App, user: User) -> None:
 
     sent = {photo.user_id for photo in await app.repo.get_submissions(today)}
     partner = daily.partner_of(members, user.user_id)
+    keyboard = None
     if current.exchanged_at is not None:
         status = texts.TODAY_EXCHANGED
     elif current.revealed_at is not None:
         status = texts.TODAY_LATE
     else:
         status = texts.today_until(schedule.reveal, app.at(today, schedule.reveal) - app.now())
-    keyboard = None
-    if not sent and current.revealed_at is None:
-        keyboard = daily.reroll_keyboard(today, await daily.rerolls_left(app, today))
+        if not sent:
+            keyboard = daily.reroll_keyboard(today, await daily.rerolls_left(app, today))
+        elif len(sent) >= daily.PAIR_SIZE:
+            # Оба фото на месте — можно открыть раньше, если согласны оба.
+            votes = await app.repo.early_votes(today)
+            name = daily.partner_name(members, user.user_id)
+            if user.user_id in votes:
+                status += "\n" + texts.early_you_wait(name)
+            else:
+                partner_wants = partner is not None and partner.user_id in votes
+                status += "\n" + (texts.early_partner_wants(name) if partner_wants else texts.EARLY_HINT)
+                keyboard = daily.early_open_keyboard(today)
     text = texts.today_status(
         current.theme,
         author=await daily.user_name(app, current.theme_author),
