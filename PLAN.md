@@ -133,7 +133,7 @@ Telegram-бот для двоих. Утром он присылает тему, 
 ```
 Photochki_bot/
 ├── PLAN.md · CLAUDE.md · README.md
-├── requirements.txt · Dockerfile · .dockerignore · railway.toml · .env.example · .gitignore
+├── requirements.txt · Dockerfile · .dockerignore · .env.example · .gitignore
 ├── themes/                 simple.txt — 350 простых тем, creative.txt — 150 посложнее
 └── bot/
     ├── __main__.py         запуск: конфиг → база → фичи → планировщик → polling
@@ -218,7 +218,8 @@ sent_messages  PK (chat_id, message_id) · date · owner_id     чьё фото 
 
 ## 5. Railway
 - Репозиторий на GitHub — `MrBoomer1981/OurSpark`. Сервис на Railway подключён к репозиторию, и каждый push в `main` запускает деплой.
-- Сборка по `Dockerfile` на базе `python:3.12-slim`. В `railway.toml` указаны `builder = "DOCKERFILE"` и `restartPolicyType = "ON_FAILURE"`. Healthcheck и публичный домен не нужны.
+- Сборка по `Dockerfile` на базе `python:3.12-slim`: Railway находит его в корне сам. Рестарт при падении — по умолчанию Railway, до 10 раз. Healthcheck и публичный домен не нужны.
+- Конфига Railway в репозитории нет. `railway.toml` (Config as Code) Railway объявил устаревшим и читает только до 1 декабря 2026, а он лишь повторял поведение по умолчанию. Новый формат Infrastructure as Code (`.railway/railway.ts`) не берём: это npm-пакет в Python-проекте, применение через `railway config apply` вместо push и риск удалить Volume, если его не описать в файле.
 - Volume монтируется в `/app/data`, там лежит `bot.db`. Подключить его можно в интерфейсе Railway или командой `railway volume add`. Сервис с volume Railway при деплое сначала останавливает, а потом запускает новую версию, поэтому две копии бота никогда не работают одновременно и не мешают друг другу в polling.
 
 | Переменная | Значение |
@@ -235,7 +236,7 @@ sent_messages  PK (chat_id, message_id) · date · owner_id     чьё фото 
 
 ## 6. Этапы
 
-1. **Сборка — готово.** Весь v1 целиком: каркас, темы, фото и обмен, напоминание, архив и серия, настройки, `/dev`, Dockerfile, railway.toml, README. Код лежит в `main` репозитория `MrBoomer1981/OurSpark`.
+1. **Сборка — готово.** Весь v1 целиком: каркас, темы, фото и обмен, напоминание, архив и серия, настройки, `/dev`, Dockerfile, README. Код лежит в `main` репозитория `MrBoomer1981/OurSpark`.
 2. **Подготовка (делаешь ты, когда будет время).** Бот в @BotFather, проект на Railway из репозитория `MrBoomer1981/OurSpark`, volume в `/app/data`, переменные `BOT_TOKEN` и `DEBUG=true`. Пошаговая инструкция — в README.
 3. **Проверка вдвоём.** Ссылку-приглашение берёшь из логов Railway, вы оба входите по ней и проходите чек-лист из раздела 7 с помощью `/dev`.
 4. **Запуск.** В `/dev` нажать «Очистить историю», затем выставить `DEBUG=false`. После этого начинается первый настоящий день.

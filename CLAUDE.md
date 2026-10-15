@@ -54,7 +54,7 @@ railway logs           # логи прода; пока участников ме
 
 ## Деплой
 
-- Railway: сервис подключён к приватному GitHub-репозиторию, push в `main` запускает деплой. Сборка по `Dockerfile` (python:3.12-slim), в `railway.toml` рестарт `ON_FAILURE`. Healthcheck и домен не нужны.
+- Railway: сервис подключён к GitHub-репозиторию `MrBoomer1981/OurSpark` (публичный — секретов в коде нет), push в `main` запускает деплой. Сборка по `Dockerfile` (python:3.12-slim): Railway находит его в корне сам. Конфига Railway в репозитории нет намеренно: `railway.toml` (Config as Code) Railway объявил устаревшим, а новый Infrastructure as Code (`.railway/railway.ts`) — лишний npm-пакет, применение через `railway config apply` и риск удалить Volume, если его не описать. Рестарт — по умолчанию Railway, `ON_FAILURE` до 10 раз. Healthcheck и домен не нужны.
 - База — `bot.db` на Volume в `/app/data`. Из-за volume Railway не держит две копии бота одновременно, и на этом держится отсутствие конфликтов polling и двойных рассылок.
 - Переменные: `BOT_TOKEN`; `INVITE_CODE` (необязательно, без неё код генерируется и хранится в `settings`); `TIMEZONE` (по умолчанию `Europe/Moscow`); `DEBUG`; `DB_PATH` (по умолчанию `data/bot.db`).
 - Локально с прод-токеном не запускать: локальная копия и прод начнут перехватывать обновления друг у друга (в логах будет `Conflict`).
