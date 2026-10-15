@@ -13,6 +13,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from bot import daily, texts
 from bot.app import App
 from bot.feature import Feature
+from bot.themes import ListThemes
 
 router = Router(name="dev")
 
@@ -38,6 +39,9 @@ def keyboard() -> InlineKeyboardMarkup:
 
 async def render(app: App) -> str:
     today = app.today()
+    themes_left = None
+    if isinstance(app.themes, ListThemes):
+        themes_left = app.themes.unused(await app.repo.used_themes())
     return texts.dev_state(
         today,
         await app.repo.get_day(today),
@@ -45,6 +49,7 @@ async def render(app: App) -> str:
         [member.name for member in await app.repo.members()],
         await daily.get_schedule(app),
         app.invite_link,
+        themes_left,
     )
 
 

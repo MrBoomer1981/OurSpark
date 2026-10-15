@@ -18,7 +18,7 @@ class Config(BaseSettings):
     invite_code: str | None = None
     timezone: str = "Europe/Moscow"
     db_path: Path = Path("data/bot.db")
-    themes_path: Path = Path("themes.txt")
+    themes_dir: Path = Path("themes")
     debug: bool = False
 
     @field_validator("invite_code", mode="before")

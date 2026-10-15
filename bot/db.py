@@ -5,6 +5,7 @@
 в PRAGMA user_version, и при старте бот докатывает недостающие.
 """
 
+import os
 from pathlib import Path
 
 import aiosqlite
@@ -53,10 +54,43 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (date, user_id)
     );
     """,
+    # 2 — кому реально ушли тема и альбом обмена: недошедшее бот досылает после рестарта.
+    # Уже состоявшиеся события помечаем доставленными, чтобы не разослать их заново.
+    """
+    CREATE TABLE deliveries (
+        date         TEXT NOT NULL,
+        user_id      INTEGER NOT NULL,
+        kind         TEXT NOT NULL,
+        delivered_at TEXT NOT NULL,
+        PRIMARY KEY (date, user_id, kind)
+    );
+
+    INSERT INTO deliveries (date, user_id, kind, delivered_at)
+    SELECT d.date, u.user_id, 'theme', d.theme_sent_at FROM days d, users u
+    WHERE d.theme_sent_at IS NOT NULL;
+
+    INSERT INTO deliveries (date, user_id, kind, delivered_at)
+    SELECT d.date, u.user_id, 'exchange', d.exchanged_at FROM days d, users u
+    WHERE d.exchanged_at IS NOT NULL;
+    """,
 ]
 
 
+def require_volume(path: Path) -> None:
+    """На Railway база обязана лежать на Volume: иначе каждый деплой стирает фото и историю."""
+    if "RAILWAY_ENVIRONMENT_ID" not in os.environ:
+        return  # не Railway — локальный запуск
+    mount = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+    if mount and path.resolve().is_relative_to(Path(mount).resolve()):
+        return
+    raise SystemExit(
+        f"База {path.resolve()} лежит не на Volume, и каждый деплой будет её стирать. "
+        "Подключи к сервису Volume с путём /app/data (или поправь DB_PATH) и задеплой заново."
+    )
+
+
 async def connect(path: Path) -> aiosqlite.Connection:
+    require_volume(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     # Автокоммит: каждый запрос атомарен сам по себе. На этом держатся брони событий
     # вида UPDATE … WHERE … IS NULL (см. repo.py).

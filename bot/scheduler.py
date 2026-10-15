@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from bot import daily
+
 if TYPE_CHECKING:
     from bot.app import App
 
@@ -18,7 +20,9 @@ TICK_SECONDS = 30
 
 
 async def run_scheduler(app: App) -> None:
-    jobs = [(feature.name, job) for feature in app.features for job in feature.jobs]
+    # Задача ядра идёт первой: досылает то, что не дошло из-за падения посреди рассылки.
+    jobs = [("ядро", daily.redeliver)]
+    jobs += [(feature.name, job) for feature in app.features for job in feature.jobs]
     logger.info("Планировщик: задач {}, тик {} с", len(jobs), TICK_SECONDS)
     while True:
         now = app.now()

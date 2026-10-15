@@ -108,7 +108,8 @@ def help_text(schedule: Schedule, max_rerolls: int, reminder_hours: int) -> str:
     return (
         "📸 <b>Фото дня на двоих</b>\n\n"
         f"• В {hhmm(schedule.theme)} приходит тема дня. Пока никто не прислал фото, "
-        f"тему можно сменить — до {max_rerolls} раз.\n"
+        f"её можно сменить на простую — до {max_rerolls} раз. "
+        "Тема, по которой уже есть фото, больше не повторится.\n"
         "• Днём каждый присылает одно фото — обычным фото или файлом без сжатия. "
         "Новое фото заменяет прежнее, подпись к фото тоже увидит партнёр.\n"
         f"• В {hhmm(schedule.reveal)} — обмен. Фото партнёра видит только тот, кто прислал своё. "
@@ -184,6 +185,7 @@ def today_status(
 # ── Фото ──
 
 ALBUM_NOTE = "\nИз альбома беру одно фото — если нужно другое, пришли его отдельно."
+PHOTO_SAVE_FAILED = "😬 Не получилось сохранить фото — пришли его ещё раз, пожалуйста."
 NOT_A_PHOTO = "Жду фото 📸 Можно обычным фото или файлом — без сжатия."
 UNKNOWN_COMMAND = "Такой команды нет. Всё, что умею, — в /help"
 
@@ -370,6 +372,7 @@ def dev_state(
     members: list[str],
     schedule: Schedule,
     invite_link: str,
+    themes_left: tuple[int, int] | None = None,
 ) -> str:
     def flag(value: object) -> str:
         return "✅" if value else "—"
@@ -381,6 +384,8 @@ def dev_state(
         f"Участники: {escape(', '.join(members)) or 'пока никого'}",
         f"Расписание: тема {hhmm(schedule.theme)}, обмен {hhmm(schedule.reveal)}",
     ]
+    if themes_left is not None:
+        lines.append(f"Новых тем: простых {themes_left[0]}, посложнее {themes_left[1]}")
     if current is None:
         lines.append("День ещё не начался")
     else:

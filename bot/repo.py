@@ -15,7 +15,13 @@ import aiosqlite
 
 from bot.themes import Theme
 
-SaveResult = Literal["new", "replaced", "ignored"]
+SaveResult = Literal["new", "replaced", "same", "ignored"]
+
+# Отслеживаемые рассылки: момент события в days и условие «досылать уже поздно».
+_DELIVERY_EVENTS = {
+    "theme": ("theme_sent_at", "AND d.revealed_at IS NULL"),
+    "exchange": ("exchanged_at", ""),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,6 +269,14 @@ class Repo:
         rows = await self._all("SELECT title FROM theme_log ORDER BY id")
         return [row["title"] for row in rows]
 
+    async def used_themes(self) -> set[str]:
+        """Темы, по которым прислали хотя бы одно фото: больше они не выпадают."""
+        rows = await self._all(
+            "SELECT DISTINCT d.theme_title FROM days d WHERE d.theme_title IS NOT NULL "
+            "AND EXISTS (SELECT 1 FROM submissions s WHERE s.date = d.date)"
+        )
+        return {row["theme_title"] for row in rows}
+
     async def themes_shown_on(self, day: dt.date) -> int:
         return await self._count("SELECT COUNT(*) FROM theme_log WHERE date = ?", day.isoformat())
 
@@ -275,8 +289,9 @@ class Repo:
         return [_submission(row) for row in rows]
 
     async def save_submission(self, photo: Submission) -> SaveResult:
-        """Сохранить фото дня: первое за день — «new», повторное — «replaced».
+        """Сохранить фото дня: первое за день — «new», другое фото вместо прежнего — «replaced».
 
+        То же самое фото ещё раз — «same»: Telegram передоставил сообщение после рестарта.
         Остальные фото того же альбома — «ignored»: из альбома берём одно.
         """
         fields = (photo.file_id, photo.kind, photo.caption, photo.media_group_id, _iso(photo.sent_at))
@@ -290,6 +305,13 @@ class Repo:
         )
         if inserted:
             return "new"
+        stored = await self._one(
+            "SELECT file_id FROM submissions WHERE date = ? AND user_id = ?",
+            photo.date.isoformat(),
+            photo.user_id,
+        )
+        if stored is not None and stored["file_id"] == photo.file_id:
+            return "same"
         replaced = await self._run(
             "UPDATE submissions "
             "SET file_id = ?, kind = ?, caption = ?, media_group_id = ?, sent_at = ? "
@@ -302,12 +324,44 @@ class Repo:
         )
         return "replaced" if replaced else "ignored"
 
+    # ── Доставка: кому реально ушли тема и альбом обмена ──
+
+    async def delivered_to(self, day: dt.date, kind: str) -> set[int]:
+        rows = await self._all(
+            "SELECT user_id FROM deliveries WHERE date = ? AND kind = ?", day.isoformat(), kind
+        )
+        return {row["user_id"] for row in rows}
+
+    async def mark_delivered(self, day: dt.date, user_id: int, kind: str, at: dt.datetime) -> None:
+        await self._run(
+            "INSERT OR IGNORE INTO deliveries (date, user_id, kind, delivered_at) VALUES (?, ?, ?, ?)",
+            day.isoformat(),
+            user_id,
+            kind,
+            _iso(at),
+        )
+
+    async def undelivered_days(
+        self, kind: str, since: dt.date, happened_before: dt.datetime
+    ) -> list[dt.date]:
+        """Дни не раньше since, где событие kind случилось до happened_before, но дошло не всем."""
+        column, too_late = _DELIVERY_EVENTS[kind]
+        rows = await self._all(
+            f"SELECT d.date FROM days d WHERE d.date >= ? AND d.{column} < ? {too_late} "
+            "AND (SELECT COUNT(*) FROM deliveries x WHERE x.date = d.date AND x.kind = ?) "
+            "< (SELECT COUNT(*) FROM users) ORDER BY d.date",
+            since.isoformat(),
+            _iso(happened_before),
+            kind,
+        )
+        return [dt.date.fromisoformat(row["date"]) for row in rows]
+
     # ── Служебное (/dev) ──
 
     async def reset_day(self, day: dt.date) -> None:
-        for table in ("submissions", "theme_log", "days"):
+        for table in ("submissions", "theme_log", "deliveries", "days"):
             await self._run(f"DELETE FROM {table} WHERE date = ?", day.isoformat())
 
     async def clear_history(self) -> None:
-        for table in ("submissions", "theme_log", "days"):
+        for table in ("submissions", "theme_log", "deliveries", "days"):
             await self._run(f"DELETE FROM {table}")

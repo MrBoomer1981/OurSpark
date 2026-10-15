@@ -3,6 +3,7 @@
 import asyncio
 import secrets
 import sys
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher
@@ -34,12 +35,33 @@ async def invite_code(config: Config, repo: Repo) -> str:
 async def main() -> None:
     config = Config()
     logger.remove()
-    logger.add(sys.stderr, level="DEBUG" if config.debug else "INFO")
+    # Значения переменных в трейсбэках (diagnose) — только в DEBUG: там бывают имена и подписи к фото.
+    logger.add(
+        sys.stderr,
+        level="DEBUG" if config.debug else "INFO",
+        backtrace=config.debug,
+        diagnose=config.debug,
+    )
 
-    conn = await db.connect(config.db_path)
+    conn = await db.connect(config.db_path)  # на Railway без Volume бот здесь остановится
     repo = Repo(conn)
-    themes = ListThemes.load(config.themes_path)
-    logger.info("Тем в списке: {}", len(themes.themes))
+    tz = ZoneInfo(config.timezone)
+    # После деплоя по этой строке видно, что ничего не пропало.
+    logger.info(
+        "База: {} · участников: {} · фото за сегодня: {}",
+        config.db_path.resolve(),
+        await repo.member_count(),
+        len(await repo.get_submissions(datetime.now(tz).date())),
+    )
+    themes = ListThemes.load(config.themes_dir)
+    simple_left, creative_left = themes.unused(await repo.used_themes())
+    logger.info(
+        "Темы: простых {} (новых {}), посложнее {} (новых {})",
+        len(themes.simple),
+        simple_left,
+        len(themes.creative),
+        creative_left,
+    )
 
     bot = Bot(
         config.bot_token.get_secret_value(),
@@ -51,7 +73,7 @@ async def main() -> None:
         repo=repo,
         config=config,
         themes=themes,
-        tz=ZoneInfo(config.timezone),
+        tz=tz,
         bot_username=me.username or "",
         invite_code=await invite_code(config, repo),
     )
@@ -75,7 +97,11 @@ async def main() -> None:
     await bot.delete_webhook(drop_pending_updates=False)
     scheduler = asyncio.create_task(run_scheduler(app))
     try:
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        # По одному (handle_as_tasks=False): Telegram считает сообщение доставленным, только когда
+        # бот его обработал. Если бота остановят посреди обработки (деплой), оно придёт заново.
+        await dp.start_polling(
+            bot, allowed_updates=dp.resolve_used_update_types(), handle_as_tasks=False
+        )
     finally:
         scheduler.cancel()
         await conn.close()

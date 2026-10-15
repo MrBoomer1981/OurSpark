@@ -5,15 +5,22 @@
 
 Каждое событие сначала бронируется в базе (repo.claim_*), и только потом рассылается.
 Поэтому повторный вызов — из планировщика, /dev или после рестарта — ничего не дублирует.
+Кому реально ушли тема и альбом обмена, отмечается в deliveries: если бот упал посреди
+рассылки, redeliver() дошлёт остальным.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Literal
 
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import (
+    TelegramAPIError,
+    TelegramNetworkError,
+    TelegramRetryAfter,
+    TelegramServerError,
+)
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import (
     InlineKeyboardButton,
@@ -35,6 +42,12 @@ MAX_REROLLS = 3
 REMINDER_HOURS = 3
 DEFAULT_THEME_TIME = time(9, 0)
 DEFAULT_REVEAL_TIME = time(21, 0)
+# Досылаем только события старше минуты: свежие, возможно, ещё рассылаются прямо сейчас.
+REDELIVERY_DELAY = timedelta(minutes=1)
+REDELIVERY_DAYS = 2
+# Временные сбои Telegram: такую отправку стоит повторить. Остальные ошибки (бот заблокирован,
+# сообщение не найдено) повторять бессмысленно.
+TRANSIENT_ERRORS = (TelegramNetworkError, TelegramRetryAfter, TelegramServerError)
 
 RerollResult = Literal["ok", "stale", "has_photo", "limit", "race"]
 
@@ -86,22 +99,29 @@ def partner_name(members: list[User], user_id: int) -> str:
 
 async def notify(
     app: App, chat_id: int, text: str, reply_markup: InlineKeyboardMarkup | None = None
-) -> None:
-    """Отправить сообщение. Ошибка с одним получателем не должна ронять рассылку второму."""
+) -> bool:
+    """Отправить сообщение. Ошибка с одним получателем не должна ронять рассылку второму.
+
+    False — временный сбой, отправку стоит повторить. True — доставлено или повторять бессмысленно.
+    """
     try:
         await app.bot.send_message(chat_id, text, reply_markup=reply_markup)
+    except TRANSIENT_ERRORS as error:
+        logger.warning("Не удалось написать {}, повторим: {}", chat_id, error)
+        return False
     except TelegramAPIError as error:
         logger.warning("Не удалось написать {}: {}", chat_id, error)
+    return True
 
 
-async def send_photos(app: App, chat_id: int, photos: list[Submission]) -> None:
-    """Прислать фото дня альбомом, а если нельзя — по одному.
+async def send_photos(app: App, chat_id: int, photos: list[Submission]) -> bool:
+    """Прислать фото дня альбомом, а если нельзя — по одному. Возвращает то же, что notify().
 
     Telegram не кладёт сжатые фото и файлы в один альбом, поэтому смешанная пара
     уходит двумя сообщениями.
     """
     if not photos:
-        return
+        return True
     names = {member.user_id: member.name for member in await app.repo.members()}
     captions = [texts.photo_caption(names.get(photo.user_id, "?"), photo.caption) for photo in photos]
     pairs = list(zip(photos, captions, strict=True))
@@ -121,8 +141,12 @@ async def send_photos(app: App, chat_id: int, photos: list[Submission]) -> None:
                     await app.bot.send_photo(chat_id, photo.file_id, caption=caption)
                 else:
                     await app.bot.send_document(chat_id, photo.file_id, caption=caption)
+    except TRANSIENT_ERRORS as error:
+        logger.warning("Не удалось отправить фото {}, повторим: {}", chat_id, error)
+        return False
     except TelegramAPIError as error:
         logger.warning("Не удалось отправить фото {}: {}", chat_id, error)
+    return True
 
 
 # ── Тема ────────────────────────────────────────────────────────────────────
@@ -146,17 +170,31 @@ async def rerolls_left(app: App, day: date) -> int:
 async def send_theme(app: App, day: date) -> bool:
     """Выбрать тему дня и разослать. False — тема за этот день уже была."""
     await app.repo.ensure_day(day)
-    theme = await app.themes.pick(await app.repo.theme_history())
-    now = datetime.now(UTC)
+    theme = await app.themes.pick(await app.repo.theme_history(), await app.repo.used_themes())
+    now = app.now()
     if not await app.repo.claim_theme(day, theme, now):
         return False
     await app.repo.log_theme(day, theme.title, now)
-    schedule = await get_schedule(app)
-    keyboard = reroll_keyboard(day, MAX_REROLLS)
-    for member in await app.repo.members():
-        await notify(app, member.user_id, texts.theme_message(theme, schedule.reveal), keyboard)
+    await deliver_theme(app, day)
     logger.info("Тема на {}: «{}»", day, theme.title)
     return True
+
+
+async def deliver_theme(app: App, day: date) -> None:
+    """Разослать тему дня тем, кому она ещё не ушла. Повторный вызов безопасен."""
+    current = await app.repo.get_day(day)
+    if current is None or current.theme_title is None:
+        return
+    schedule = await get_schedule(app)
+    left = 0 if await app.repo.get_submissions(day) else await rerolls_left(app, day)
+    keyboard = reroll_keyboard(day, left)
+    text = texts.theme_message(current.theme, schedule.reveal)
+    delivered = await app.repo.delivered_to(day, "theme")
+    for member in await app.repo.members():
+        if member.user_id in delivered:
+            continue
+        if await notify(app, member.user_id, text, keyboard):
+            await app.repo.mark_delivered(day, member.user_id, "theme", app.now())
 
 
 async def skip_day(app: App, day: date) -> None:
@@ -176,10 +214,13 @@ async def reroll_theme(app: App, day: date, by: User) -> RerollResult:
     left = await rerolls_left(app, day)
     if left <= 0:
         return "limit"
-    theme = await app.themes.pick(await app.repo.theme_history())
+    # Другая тема — всегда простая: пришла сложная, а готовиться не хочется.
+    theme = await app.themes.pick(
+        await app.repo.theme_history(), await app.repo.used_themes(), simple_only=True
+    )
     if not await app.repo.replace_theme(day, current.theme_title, theme):
         return "race"
-    await app.repo.log_theme(day, theme.title, datetime.now(UTC))
+    await app.repo.log_theme(day, theme.title, app.now())
     schedule = await get_schedule(app)
     keyboard = reroll_keyboard(day, left - 1)
     for member in await app.repo.members():
@@ -233,6 +274,9 @@ async def submit_photo(app: App, message: Message, user: User) -> None:
     )
     if result == "ignored":  # остальные фото того же альбома
         return
+    # Партнёру пишем только про первое фото дня. «same» — то же фото пришло повторно
+    # (Telegram передоставил сообщение после рестарта): отвечаем как обычно, без уведомлений.
+    first_photo = result == "new"
 
     partner = partner_of(members, user.user_id)
     current = await app.repo.get_day(day)  # перечитываем: вечер мог наступить, пока фото сохранялось
@@ -241,15 +285,16 @@ async def submit_photo(app: App, message: Message, user: User) -> None:
         if await try_exchange(app, day):
             return
         await message.answer(texts.photo_accepted_late(partner_name(members, user.user_id)))
-        if result == "new" and partner:
+        if first_photo and partner:
             await notify(app, partner.user_id, texts.partner_photo_waiting_late(user.name))
         return
 
-    reply = texts.photo_accepted(schedule.reveal) if result == "new" else texts.photo_replaced(schedule.reveal)
+    replaced = result == "replaced"
+    reply = texts.photo_replaced(schedule.reveal) if replaced else texts.photo_accepted(schedule.reveal)
     if message.media_group_id:
         reply += texts.ALBUM_NOTE
     await message.answer(reply)
-    if result == "new" and partner:
+    if first_photo and partner:
         await notify(app, partner.user_id, texts.partner_photo_waiting(user.name))
 
 
@@ -258,7 +303,7 @@ async def submit_photo(app: App, message: Message, user: User) -> None:
 
 async def send_reminders(app: App, day: date) -> bool:
     """Напомнить тем, у кого ещё нет фото. False — напоминание уже было или вечер прошёл."""
-    if not await app.repo.claim_reminder(day, datetime.now(UTC)):
+    if not await app.repo.claim_reminder(day, app.now()):
         return False
     current = await app.repo.get_day(day)
     title = current.theme_title if current and current.theme_title else ""
@@ -292,10 +337,9 @@ async def visible_photos(app: App, day: date, viewer_id: int) -> list[Submission
 
 async def try_exchange(app: App, day: date) -> bool:
     """Провести обмен, если оба фото на месте и обмена ещё не было."""
-    if not await app.repo.claim_exchange(day, datetime.now(UTC)):
+    if not await app.repo.claim_exchange(day, app.now()):
         return False
-    for member in await app.repo.members():
-        await send_photos(app, member.user_id, await visible_photos(app, day, member.user_id))
+    await deliver_exchange(app, day)
     logger.info("Обмен за {}", day)
     for feature in app.features:
         if feature.on_exchange is None:
@@ -307,9 +351,19 @@ async def try_exchange(app: App, day: date) -> bool:
     return True
 
 
+async def deliver_exchange(app: App, day: date) -> None:
+    """Разослать фото обмена тем, кому они ещё не ушли. Повторный вызов безопасен."""
+    delivered = await app.repo.delivered_to(day, "exchange")
+    for member in await app.repo.members():
+        if member.user_id in delivered:
+            continue
+        if await send_photos(app, member.user_id, await visible_photos(app, day, member.user_id)):
+            await app.repo.mark_delivered(day, member.user_id, "exchange", app.now())
+
+
 async def reveal(app: App, day: date) -> bool:
     """Вечернее событие. False — оно за этот день уже было или темы не было."""
-    if not await app.repo.claim_reveal(day, datetime.now(UTC)):
+    if not await app.repo.claim_reveal(day, app.now()):
         return False
     if await try_exchange(app, day):
         return True
@@ -334,8 +388,28 @@ async def close_past_day(app: App, day: date) -> None:
 
     Обмен — только если оба фото есть; звать дослать фото уже поздно.
     """
-    if await app.repo.claim_reveal(day, datetime.now(UTC)):
+    if await app.repo.claim_reveal(day, app.now()):
         await try_exchange(app, day)
+
+
+# ── Досылка после рестарта ──────────────────────────────────────────────────
+
+
+async def redeliver(app: App, now: datetime) -> None:
+    """Задача ядра: дослать тему и альбом обмена тем, кому они не дошли.
+
+    Бот мог упасть или перезапуститься посреди рассылки (например, при деплое).
+    Тему досылаем, пока не наступил вечер, альбом — в течение REDELIVERY_DAYS дней.
+    """
+    before = now - REDELIVERY_DELAY
+    today = app.local_date(now)
+    for day in await app.repo.undelivered_days("theme", today, before):
+        logger.info("Досылаем тему за {}", day)
+        await deliver_theme(app, day)
+    since = today - timedelta(days=REDELIVERY_DAYS)
+    for day in await app.repo.undelivered_days("exchange", since, before):
+        logger.info("Досылаем обмен за {}", day)
+        await deliver_exchange(app, day)
 
 
 # ── Серия ───────────────────────────────────────────────────────────────────
