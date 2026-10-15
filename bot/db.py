@@ -116,6 +116,70 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (date, user_id)
     );
     """,
+    # 5 — один бот, много пар. Те, кто играл до этого, становятся парой №1: к ней переезжают
+    # код приглашения, расписание и вся история. Дни пересобираются: у разных пар одни и те же даты.
+    """
+    CREATE TABLE pairs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        invite_code TEXT NOT NULL UNIQUE,
+        created_at  TEXT NOT NULL,
+        closed_at   TEXT
+    );
+
+    CREATE TABLE pair_settings (
+        pair_id INTEGER NOT NULL,
+        key     TEXT NOT NULL,
+        value   TEXT NOT NULL,
+        PRIMARY KEY (pair_id, key)
+    );
+
+    INSERT INTO pairs (id, invite_code, created_at)
+    SELECT 1,
+           COALESCE((SELECT value FROM settings WHERE key = 'invite_code'), lower(hex(randomblob(9)))),
+           strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now')
+    WHERE EXISTS (SELECT 1 FROM users);
+
+    INSERT INTO pair_settings (pair_id, key, value)
+    SELECT 1, key, value FROM settings
+    WHERE key IN ('theme_time', 'reveal_time') AND EXISTS (SELECT 1 FROM pairs WHERE id = 1);
+
+    ALTER TABLE users ADD COLUMN pair_id INTEGER;
+    UPDATE users SET pair_id = 1;
+
+    CREATE TABLE days_v5 (
+        pair_id          INTEGER NOT NULL,
+        date             TEXT NOT NULL,
+        theme_title      TEXT,
+        theme_hint       TEXT,
+        theme_author     INTEGER,
+        theme_sent_at    TEXT,
+        reminder_sent_at TEXT,
+        revealed_at      TEXT,
+        exchanged_at     TEXT,
+        skipped          INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (pair_id, date)
+    );
+    INSERT INTO days_v5 (pair_id, date, theme_title, theme_hint, theme_author, theme_sent_at,
+                         reminder_sent_at, revealed_at, exchanged_at, skipped)
+    SELECT 1, date, theme_title, theme_hint, theme_author, theme_sent_at,
+           reminder_sent_at, revealed_at, exchanged_at, skipped FROM days;
+    DROP TABLE days;
+    ALTER TABLE days_v5 RENAME TO days;
+
+    ALTER TABLE theme_log ADD COLUMN pair_id INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE submissions ADD COLUMN pair_id INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE deliveries ADD COLUMN pair_id INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE custom_themes ADD COLUMN pair_id INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE reactions ADD COLUMN pair_id INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE sent_messages ADD COLUMN pair_id INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE early_open ADD COLUMN pair_id INTEGER NOT NULL DEFAULT 1;
+
+    CREATE INDEX users_by_pair ON users (pair_id);
+    CREATE INDEX theme_log_by_pair ON theme_log (pair_id, id);
+    CREATE INDEX submissions_by_pair ON submissions (pair_id, date);
+    CREATE INDEX deliveries_by_pair ON deliveries (pair_id, date, kind);
+    CREATE INDEX custom_themes_by_pair ON custom_themes (pair_id, shown_on);
+    """,
 ]
 
 

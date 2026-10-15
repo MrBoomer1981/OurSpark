@@ -2,61 +2,61 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Статус
+## Status
 
-v1 собран и лежит в GitHub (`MrBoomer1981/OurSpark`, ветка `main`), но ещё не задеплоен: бота в @BotFather и проект на Railway пользователь создаёт сам (шаги — в `README.md`). `PLAN.md` — источник правды по продукту: правила дня, команды, схема БД, этапы.
+The bot runs in production on Railway (repo `MrBoomer1981/OurSpark`, branch `main`). One bot serves many pairs; pair #1 is the user and their partner. `PLAN.md` is the source of truth for product rules, commands, schema and milestones.
 
-## Правила работы
+## Working rules
 
-- **Сначала план, потом код.** Любая фича или правка начинается с плана: обнови `PLAN.md` (или распиши план в чате) и дождись «го» от пользователя. Только после этого пиши код.
-- **Тестов не пишем.** Никаких тестовых файлов, тестовых зависимостей и шагов с тестами в планах. Поведение проверяется руками в Telegram через `/dev` (работает только при `DEBUG=true`): кнопки запускают события дня, не дожидаясь расписания.
-- Пользователь будет расширять бота новыми фишками — добавляй их фичами (см. «Архитектура»), а не наращивай ядро.
-- С пользователем общаемся по-русски. Тексты бота живут только в `bot/texts.py`. Родовые окончания у участников не используем («прислал/прислала» нельзя). Имя всегда в именительном падеже, потому что склонять имена бот не умеет: «<b>Саша</b>: фото готово», а не «фото от Саши».
+- **Plan before code.** Every feature or change starts with a plan: update `PLAN.md` (or describe the plan in chat) and wait for the user's go. Only then write code.
+- **No tests in the repo.** No test files, test dependencies or test steps in plans. Behaviour is checked by hand in Telegram with `/dev` (`DEBUG=true` only). Throwaway verification scripts live outside the repository.
+- **Push = production deploy.** Commit and push only when the user explicitly says so; after a push, watch the Railway deploy and check the startup log.
+- **Languages.** Talk to the user in Russian. Technical docs (`PLAN.md`, `CLAUDE.md`, any other docs) are written in English; `README.md` stays in Russian. Bot texts are Russian and live only in `bot/texts.py`: no gendered verb forms for participants («прислал/прислала» is not allowed), and names always stay in the nominative case because the bot cannot decline them («<b>Саша</b>: фото готово», not «фото от Саши»).
+- The user keeps extending the bot — add features as feature modules (see Architecture) instead of growing the core.
 
-## Команды
+## Commands
 
 ```bash
 pip install -r requirements.txt
-python -m bot          # нужен .env (см. .env.example) с токеном ОТДЕЛЬНОГО тестового бота
-railway logs           # логи прода; пока участников меньше двух, там же ссылка-приглашение
+python -m bot          # needs .env (see .env.example) with the token of a SEPARATE test bot
+railway logs           # production logs (this folder is linked to the OurSpark service)
 ```
 
-Деплой — push в `main`: Railway собирает `Dockerfile`.
+Deploy = push to `main`; Railway builds the `Dockerfile`.
 
-## Архитектура
+## Architecture
 
-Приватный Telegram-бот для пары: утром тема, днём фото, вечером обмен. Python 3.12, aiogram 3 в режиме polling, SQLite через aiosqlite на Railway Volume, pydantic-settings, loguru. Всё работает в одном процессе: polling и планировщик крутятся в одном asyncio-loop.
+A Telegram bot for couples: morning theme, daytime photos, evening exchange. Python 3.12, aiogram 3 in polling mode, SQLite via aiosqlite on a Railway Volume, pydantic-settings, loguru. One process: polling and the scheduler share one asyncio loop.
 
-**Ядро и фичи.**
-- Ядро: `bot/daily.py` (логика дня), `bot/repo.py` (весь SQL), `bot/scheduler.py`, `bot/app.py`. `App` — общий контекст, каждый хендлер получает его параметром `app`, а участника — параметром `user` (его подставляет `bot/access.py`).
-- Всё, что видит пользователь, — фичи в `bot/features/`. Фича — модуль с объектом `Feature` (router, jobs, commands, `card`, хук `on_exchange`), подключённый в реестре `bot/features/__init__.py`.
-- **Вечерняя карточка** — одно сообщение после альбома обмена. Шапку (тема, дата, автор, серия) собирает `daily.build_card`, а фичи добавляют в неё строки и ряд кнопок через `Feature.card` (сейчас так подключены реакции). Карточка досылается после рестарта (вид доставки `card`), а `on_exchange` — нет, поэтому новое в вечере добавляй через `card`.
-- Порядок в реестре задаёт порядок роутеров. `fallback` всегда последний, `dev` подключается только при `DEBUG=true`.
-- Новая фишка = новый модуль + строка в реестре. Ядро трогаем, только если фиче нужен новый хук.
+**Core, pairs and features.**
+- Core modules: `bot/daily.py` (day logic), `bot/repo.py` (all SQL), `bot/scheduler.py`, `bot/app.py`, `bot/access.py`, `bot/ui.py`.
+- **Pairs.** `Core` is the shared context (bot, connection, themes, features, clock `core.clock`). `App` is one pair's context with the interface the day logic and features use (`app.repo`, `app.today()`, `app.invite_link`, …): `Repo(conn, pair_id)` scopes every query to the pair, and time is in the pair's zone (pair setting `timezone`, default `TIMEZONE`). `Registry` holds shared operations: create a pair, join by code, `/leave`, list complete pairs. `access.py` resolves the sender's pair and injects `app` and `user` into handlers (both `None` when the sender is not in a pair; then only `/start`, `/help` and `pair:*` buttons pass). The scheduler walks all complete pairs on every tick. **Every new query on pair data must filter by `pair_id`.**
+- Everything user-facing is a feature in `bot/features/`: a module with a `Feature` object (router, jobs, commands, `card`, `on_exchange` hook) registered in `bot/features/__init__.py`. Registry order = router order; `fallback` is always last, `dev` is enabled only with `DEBUG=true`. A new feature = a new module + one registry line; touch the core only if the feature needs a new hook.
+- **Evening card** — one message after the exchange album. `daily.build_card` builds the header (theme, date, author, streak); features add lines and a button row through `Feature.card` (reactions use it). The card is re-delivered after restarts (delivery kind `card`), `on_exchange` is not — put new evening things into the card.
 
-Инварианты, которые нельзя ломать:
+Invariants:
 
-- **Состояние дня хранится в БД, а не в памяти.** Задача планировщика — функция `job(app, now)`, которая вызывается раз в 30 секунд. Это не cron, а сверка: время наступило, а отметка в `days` пустая → действуем. Поэтому рестарт или деплой ничего не теряет и ничего не повторяет.
-- **Событие сначала бронируется, потом рассылается.** `repo.claim_*` — атомарный `UPDATE … WHERE <отметка> IS NULL`, True получает только первый. На этом держатся брони, поэтому соединение работает в автокоммите (`isolation_level=None`). Новые разовые события делай так же.
-- **Правило «только в обмен» реализовано только в `daily.visible_photos()`.** Обмен, досылка до полуночи, архив и `/dev` вызывают эту функцию, а не повторяют логику.
-- **День фото определяется по `message.date`** в часовом поясе пары, а не по времени обработки. Накопившиеся апдейты при старте не сбрасываются.
-- **Сами файлы фото не храним**, только `file_id` и `kind` (`photo` или `document`). Фото и документы Telegram не кладёт в один альбом, это учтено в `daily.send_photos`.
-- **Схема БД меняется только новой миграцией в конце `MIGRATIONS`** (`bot/db.py`). Применённые миграции не редактировать. Новые настройки — это пары ключ-значение в `settings`, миграция для них не нужна.
-- Участников ровно двое (`daily.PAIR_SIZE`). Пока их меньше, планировщик ничего не делает.
-- **Темы:** простые лежат в `themes/simple.txt` и выпадают в 70% дней (`themes.SIMPLE_SHARE`), посложнее — в `themes/creative.txt`, «Другая тема» берётся только из простых. Название — это ключ темы в истории, поэтому оно должно быть уникальным в обоих файлах. Использованные темы (те, по которым есть фото) не хранятся отдельно, их вычисляет `repo.used_themes()`, и они больше не выпадают. Простые темы — это темы без подготовки; про геометрию и композицию тем не добавлять.
-- **Сообщения обрабатываются по одному** (`handle_as_tasks=False` в `__main__.py`). Telegram подтверждает обновление только после обработки, поэтому деплой посреди обработки не теряет фото: сообщение придёт заново. Параллельную обработку не возвращать. Хендлеры должны спокойно переживать повторную доставку того же сообщения: например, повторное фото даёт `SaveResult` «same».
-- **Важные рассылки идут через `daily.deliver_*`.** Кому ушло, отмечается в `deliveries`, а недошедшее досылает `daily.redeliver` — задача ядра в планировщике, которая берёт только события старше минуты. Новую рассылку, которая не должна теряться, делай так же. Хук `on_exchange` вызывается один раз и может не сработать, если бот упадёт посреди обмена, поэтому критичное в него не клади.
-- **На Railway без Volume бот не стартует** (`db.require_volume`).
-- **Реакции — только кнопками** (`features/reactions.py`). Родные реакции Telegram боту в личном чате не приходят: для `message_reaction` бот должен быть администратором чата, а в личке это невозможно. Это проверено по документации и подтверждено чужими тестами, к этому вопросу не возвращаться.
-- **Ответы (reply) на фото пересылаются партнёру по таблице `sent_messages`.** Каждое отправленное фото дня и карточку `daily.send_photos` и `daily.send_card` записывают в формате «чат + сообщение → день и чьё фото». Новое место, где бот присылает фото дня, тоже должно отправлять через `send_photos`.
-- **Темы друг для друга (`/addtheme`) лежат в `custom_themes`.** Когда тема из копилки выпадает, решает ядро — `daily.send_theme`: не чаще чем через день, по очереди от авторов. Автор темы дня хранится в `days.theme_author`. Если тему сменили кнопкой, она возвращается в копилку (`repo.return_custom_theme`).
-- **Открыть раньше** (`daily.request_early_open`): обмен до вечера проходит, только когда «Открыть сейчас» нажали оба (таблица `early_open`). Сначала ставится `revealed_at`, потом проводится обмен. Поэтому везде соблюдается правило «обмен был ⇒ вечер был», и вечернее событие с напоминанием такие дни пропускают.
-- **Серия считается в `daily.compute_streak`** (чистая функция, без базы). «Рекорд» срабатывает только один раз, когда серия обгоняет прежнюю лучшую, и никогда — на первой серии.
+- **Day state lives in the database, not in memory.** A scheduler job is `job(app, now)`, called every 30 s per pair. It is reconciliation, not cron: the time has come and the mark in `days` is empty → act. Restarts and deploys lose nothing and repeat nothing.
+- **Claim first, send second.** `repo.claim_*` is an atomic `UPDATE … WHERE <mark> IS NULL`; only the first caller gets True. Autocommit (`isolation_level=None`) is what makes claims work. New one-off events must follow the same pattern.
+- **The mutual rule lives only in `daily.visible_photos()`.** The exchange, late photos, the history and `/dev` call it instead of re-implementing it.
+- **A photo's day is taken from `message.date`** in the pair's zone, not processing time. Pending updates are not dropped at startup.
+- **Photo files are never stored**, only `file_id` and `kind` (`photo` or `document`). Telegram cannot mix photos and documents in one album — handled in `daily.send_photos`.
+- **Schema changes only through a new migration appended to `MIGRATIONS`** (`bot/db.py`). Never edit applied migrations. Pair settings are key-value rows in `pair_settings` and need no migration.
+- A pair has exactly two members (`daily.PAIR_SIZE`); the schedule does not run for incomplete pairs. A person belongs to at most one pair.
+- **Themes:** simple ones in `themes/simple.txt` (70% of days, `themes.SIMPLE_SHARE`), creative ones in `themes/creative.txt`; a reroll always gives a simple theme. The title is the theme key, so titles must be unique across both files. Used themes (with photos) are derived per pair by `repo.used_themes()` and never offered again. Simple themes need no preparation; do not add geometry/composition themes.
+- **Updates are processed one by one** (`handle_as_tasks=False` in `__main__.py`): Telegram confirms an update only after it was handled, so a deploy mid-processing loses no photo — the update is redelivered. Do not bring back concurrent handling. Handlers must tolerate redelivery (a repeated photo yields `SaveResult` «same»).
+- **Important sends go through `daily.deliver_*`.** Who got what is recorded in `deliveries`; `daily.redeliver` (a core scheduler job, events older than a minute) re-sends the rest. New sends that must not be lost follow the same pattern.
+- **No volume on Railway → the bot refuses to start** (`db.require_volume`).
+- **Reactions are buttons only** (`features/reactions.py`). Native Telegram reactions are not delivered to a bot in a private chat (`message_reaction` requires the bot to be a chat administrator, impossible in a DM). Verified in the docs and by third-party tests; do not revisit.
+- **Replies to photos are forwarded via `sent_messages`.** `daily.send_photos` and `daily.send_card` record "chat + message → day and photo owner". Any new place that sends day photos must use `send_photos`.
+- **Partner themes (`/addtheme`) live in `custom_themes`.** When a jar theme is used is decided by the core (`daily.send_theme`): at most every other day, alternating authors. The day's theme author is `days.theme_author`; a rerolled jar theme goes back to the jar (`repo.return_custom_theme`).
+- **Open early** (`daily.request_early_open`): an exchange before the evening happens only when both pressed «Открыть сейчас» (table `early_open`). `revealed_at` is set first, then the exchange — so "exchanged ⇒ revealed" holds everywhere and the evening event and the reminder skip such days.
+- **The streak is computed in `daily.compute_streak`** (a pure function). The record fires once, when a streak overtakes the previous best, never on the very first streak.
 
-## Деплой
+## Deploy
 
-- Railway: сервис подключён к GitHub-репозиторию `MrBoomer1981/OurSpark` (публичный — секретов в коде нет), push в `main` запускает деплой. Сборка по `Dockerfile` (python:3.12-slim): Railway находит его в корне сам. Конфига Railway в репозитории нет намеренно: `railway.toml` (Config as Code) Railway объявил устаревшим, а новый Infrastructure as Code (`.railway/railway.ts`) — лишний npm-пакет, применение через `railway config apply` и риск удалить Volume, если его не описать. Рестарт — по умолчанию Railway, `ON_FAILURE` до 10 раз. Healthcheck и домен не нужны.
-- База — `bot.db` на Volume в `/app/data`. Из-за volume Railway не держит две копии бота одновременно, и на этом держится отсутствие конфликтов polling и двойных рассылок.
-- Переменные: `BOT_TOKEN`; `INVITE_CODE` (необязательно, без неё код генерируется и хранится в `settings`); `TIMEZONE` (по умолчанию `Europe/Moscow`); `DEBUG`; `DB_PATH` (по умолчанию `data/bot.db`).
-- Локально с прод-токеном не запускать: локальная копия и прод начнут перехватывать обновления друг у друга (в логах будет `Conflict`).
-- Деплоить можно в любое время, в том числе днём, когда фото уже прислано: подробности в разделе «Надёжность при деплое» в `PLAN.md`. Отдельная БД (Postgres) не нужна, это решение обсуждали.
+- The Railway service is connected to `MrBoomer1981/OurSpark` (public — no secrets in code); a push to `main` deploys. The `Dockerfile` (python:3.12-slim) is detected automatically. There is no Railway config in the repo on purpose: `railway.toml` (Config as Code) is deprecated, and Infrastructure as Code (`.railway/railway.ts`) means an npm package, `railway config apply` instead of push and a risk of deleting the volume if it is not declared. The restart policy is Railway's default, `ON_FAILURE` up to 10 times.
+- The database is `bot.db` on the volume at `/app/data`. With a volume Railway never runs two copies at once — that is what prevents polling conflicts and double sends.
+- Variables: `BOT_TOKEN`; `TIMEZONE` (time zone of new pairs, default `Europe/Moscow`); `NEW_PAIRS` (`false` closes registration of new pairs); `DEBUG`; `DB_PATH` (default `data/bot.db`). There are no invite codes in variables: every pair has its own code in `pairs`.
+- Never run locally with the production token: the local copy and production would steal updates from each other (`Conflict` in logs).
+- Deploys are fine any time, including during the day when a photo was already sent (see "Reliability on deploy" in `PLAN.md`). A separate database (Postgres) is not needed — this was discussed and decided.

@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
 from datetime import date, datetime
 
 from aiogram import Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import BotCommand, CallbackQuery, Message
 
-from bot import daily, texts
+from bot import daily, texts, ui
 from bot.app import App
 from bot.feature import Feature
 from bot.repo import User
@@ -91,9 +89,7 @@ async def on_reroll(
         await callback.answer(texts.REROLL_DENIED[result], show_alert=True)
         return
     await callback.answer()
-    if isinstance(callback.message, Message):
-        with suppress(TelegramBadRequest):  # старое сообщение могло стать нередактируемым
-            await callback.message.edit_reply_markup(reply_markup=None)
+    await ui.edit_message(callback)
 
 
 feature = Feature(

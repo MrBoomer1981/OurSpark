@@ -6,16 +6,14 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
 from datetime import date
 
 from aiogram import F, Router
 from aiogram.dispatcher.event.bases import SkipHandler
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 
-from bot import daily, texts
+from bot import daily, texts, ui
 from bot.app import App
 from bot.feature import CardPart, Feature
 from bot.repo import User
@@ -75,10 +73,8 @@ async def on_reaction(
         await daily.notify(app, partner.user_id, texts.reaction_notice(user.name, emoji, title, when))
     await callback.answer(texts.reaction_sent(emoji))
     # Отмечаем выбор на кнопке: перестраиваем только клавиатуру, текст карточки не трогаем.
-    if isinstance(callback.message, Message):
-        _, markup = await daily.build_card(app, day, user, archive=True)
-        with suppress(TelegramBadRequest):
-            await callback.message.edit_reply_markup(reply_markup=markup)
+    _, markup = await daily.build_card(app, day, user, archive=True)
+    await ui.edit_message(callback, markup=markup)
 
 
 @router.message(F.reply_to_message, F.text, ~F.text.startswith("/"))

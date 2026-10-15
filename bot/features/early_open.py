@@ -5,14 +5,12 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
 from datetime import date
 
 from aiogram import Router
-from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery
 
-from bot import daily, texts
+from bot import daily, texts, ui
 from bot.app import App
 from bot.feature import Feature
 from bot.repo import User
@@ -34,9 +32,8 @@ async def on_early_open(
             "too_late": texts.EARLY_TOO_LATE,
         }[result]
     await callback.answer(answer)
-    if result != "not_ready" and isinstance(callback.message, Message):
-        with suppress(TelegramBadRequest):  # кнопка своё отработала
-            await callback.message.edit_reply_markup(reply_markup=None)
+    if result != "not_ready":
+        await ui.edit_message(callback)
 
 
 feature = Feature(name="early_open", router=router)

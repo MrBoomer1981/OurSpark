@@ -1,7 +1,9 @@
-"""Доступ: бот только для двух участников.
+"""Доступ: кто в паре — работает со своей парой; кто не в паре — может только создать пару
+или войти по ссылке партнёра.
 
-Чужим доступен лишь /start — в нём проверяется код приглашения (features/onboarding.py).
-Найденный участник кладётся в data["user"], и хендлеры получают его параметром user.
+Middleware находит пару того, кто пишет, и кладёт в data контекст пары (app) и участника
+(user) — хендлеры получают их параметрами. Не в паре — оба равны None, и дальше
+пропускаются только /start, /help и кнопки создания пары (features/onboarding.py).
 """
 
 from __future__ import annotations
@@ -15,6 +17,10 @@ from aiogram.types import CallbackQuery, Chat, Message, TelegramObject
 from aiogram.types import User as TelegramUser
 
 from bot import texts
+from bot.app import Core
+
+PAIR_CALLBACK_PREFIX = "pair"  # кнопки создания пары и выхода из неё — features/onboarding.py
+OPEN_COMMANDS = ("/start", "/help")
 
 
 class AccessMiddleware(BaseMiddleware):
@@ -28,19 +34,25 @@ class AccessMiddleware(BaseMiddleware):
         chat: Chat | None = data.get("event_chat")
         if sender is None or (chat is not None and chat.type != ChatType.PRIVATE):
             return None  # группы и каналы бот игнорирует
-        member = await data["app"].repo.get_member(sender.id)
-        data["user"] = member
-        if member is not None or is_start_command(event):
+        core: Core = data["core"]
+        pair_id = await core.registry.user_pair(sender.id)
+        app = await core.pair_app(pair_id) if pair_id is not None else None
+        data["app"] = app
+        data["user"] = await app.repo.get_member(sender.id) if app is not None else None
+        if app is not None or is_open_to_all(event):
             return await handler(event, data)
         if isinstance(event, Message):
-            await event.answer(texts.PRIVATE)
+            await event.answer(texts.NOT_IN_PAIR)
         elif isinstance(event, CallbackQuery):
-            await event.answer()
+            await event.answer(texts.NOT_IN_PAIR, show_alert=True)
         return None
 
 
-def is_start_command(event: TelegramObject) -> bool:
+def is_open_to_all(event: TelegramObject) -> bool:
+    """То, что доступно и тем, кто не в паре: /start, /help и кнопки создания пары."""
+    if isinstance(event, CallbackQuery):
+        return (event.data or "").split(":", 1)[0] == PAIR_CALLBACK_PREFIX
     if not isinstance(event, Message) or not event.text or not event.text.strip():
         return False
-    command = event.text.split(maxsplit=1)[0]
-    return command.split("@")[0] == "/start"
+    command = event.text.split(maxsplit=1)[0].split("@")[0]
+    return command in OPEN_COMMANDS

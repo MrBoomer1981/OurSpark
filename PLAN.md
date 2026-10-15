@@ -1,273 +1,259 @@
-# Photochki: фото дня на двоих
+# OurSpark — daily photo for two: plan and spec
 
-Telegram-бот для двоих. Утром он присылает тему, днём вы фотографируете и отправляете фото боту, вечером бот устраивает обмен: каждый получает фото другого. Бот живёт на Railway.
+A Telegram bot for couples. Every morning it sends a theme, during the day each partner takes a photo and sends it to the bot, in the evening the bot runs the exchange: each partner sees the other's photo. One bot serves any number of pairs. Hosted on Railway.
 
-> Правило проекта: сначала план, потом код. Тестов не пишем, всё проверяем руками в Telegram.
+> Project rule: plan first, then code. No tests; behaviour is checked by hand in Telegram.
 
 ---
 
-## 1. Как проходит день
+## 1. A day, step by step
 
-Пример с расписанием по умолчанию: тема в 09:00, обмен в 21:00, по Москве.
+Defaults: theme at 09:00, exchange at 21:00, in the pair's time zone.
 
-| Время | Что происходит |
+| Time | What happens |
 |---|---|
-| 09:00 | Обоим приходит тема: «📸 Тема дня: «Отражения». Лужи, витрины, ложки: найди мир наоборот. Жду фото до 21:00». Под сообщением кнопка «🔄 Другая тема» |
-| днём | Каждый отправляет фото. Бот отвечает «✅ Принято, обмен в 21:00», а второму пишет «👀 <имя>: фото готово и ждёт обмена» |
-| 18:00 | Тому, кто ещё не прислал фото: «⏰ До обмена 3 часа» |
-| 21:00 | Если фото прислали оба, каждый получает альбом из двух фото и строку «🔥 6 дней подряд» |
-| 21:00–23:59 | Опоздавший ещё может дослать фото, и тогда обмен случится сразу |
-| 00:00 | День закрывается |
+| 09:00 | Both get the theme («📸 Тема дня — «Отражения»…», hint, «Жду фото до 21:00», streak line) with a «🔄 Другая тема» button |
+| daytime | Each sends a photo. The sender gets «✅ Принято», the partner «👀 <name>: фото готово». When both photos are in, both messages also carry «🔓 Открыть сейчас» |
+| 18:00 | Whoever has no photo yet gets a reminder (with «🔥 На кону серия» if there is a streak) |
+| 21:00 | If both sent: album + evening card (theme, author, streak, milestones, reaction buttons) |
+| 21:00–23:59 | A late photo can still be sent; the exchange then happens immediately |
+| 00:00 | The day closes |
 
 ---
 
-## 2. Правила
+## 2. Rules
 
-### Участники
-- В боте ровно два участника. Вход по ссылке-приглашению `t.me/<бот>?start=<код>`.
-- Придумывать код не нужно: бот генерирует его при первом запуске и хранит в базе. Если задана переменная `INVITE_CODE`, бот берёт код из неё.
-- Пока участников меньше двух, при каждом старте бот печатает ссылку в логи Railway. Первому вошедшему бот присылает ту же ссылку в чат, чтобы её можно было переслать второму.
-- После того как вошли двое, вход закрывается, и всем остальным бот отвечает «Это приватный бот».
-- Пока в боте меньше двух человек, расписание не запускается.
-- Имена для подписей бот берёт из Telegram. Тексты написаны без родовых окончаний (никаких «прислал/прислала»), а имя всегда стоит в именительном падеже: склонять имена бот не умеет.
+### Pairs: one bot, many pairs
+- **Create a pair:** `/start` → «💞 Создать пару» → the bot replies with an invite link `t.me/<bot>?start=<code>`. Every pair has its own code.
+- **Join:** the partner opens the link and the pair is complete. A third person gets «В этой паре уже двое» and an offer to create their own pair. A person belongs to at most one pair.
+- **Everything is per pair:** schedule and time zone (`/settings`), theme history (used themes never repeat within the pair), streak, theme jar, reactions, history. Pairs never see each other.
+- **`/leave`** (with confirmation) dissolves the pair; the partner is notified; the history stays in the database but is no longer reachable; a new pair starts from scratch.
+- **The schedule runs only for complete pairs** (two members).
+- **Not in a pair:** only `/start`, `/help` and the pair buttons work; everything else gets «Ты пока не в паре…».
+- **`NEW_PAIRS=false`** closes registration of new pairs; existing pairs keep playing.
+- **Pair #1** is the couple that played before multi-pair support: migration 5 moved them there with their invite code, schedule and full history.
+- **Texts never use gendered verb forms** for participants, and names always stay in the nominative case (the bot cannot decline names).
 
-### Темы
-- Всего 500 тем в двух группах. Одна строка — одна тема в формате «Название — подсказка».
-  - **Простые, 350 тем:** `themes/simple.txt`. Такую тему можно снять за минуту там, где ты сейчас (дома, на работе, по дороге): без реквизита, без особого света и без поиска места.
-  - **Посложнее, 150 тем:** `themes/creative.txt`. Над такой темой надо подумать, что-то поискать или придумать: свет, ракурсы, настроение, игра.
-- **Каждый день бот с вероятностью 70% берёт простую тему, с вероятностью 30% — посложнее.** Группы по размеру в той же пропорции, поэтому обе расходуются одинаково быстро.
-- **Тема, по которой прислали хотя бы одно фото, считается использованной и больше не выпадает.** Отдельно её не помечаем: бот вычисляет это по базе, из дней, где есть фото.
-- **Темы, которые показали, но без фото (или заменили кнопкой), могут вернуться,** но не раньше чем через 30 показов. Сначала бот берёт темы, которые показывались реже других.
-- Если неиспользованные темы в группе закончатся, бот возьмёт тему из другой группы. Если закончатся все, он начнёт повторять старые и напишет предупреждение в логи. При 500 темах это произойдёт примерно через полтора года.
-- Сезонных тем нет, чтобы «снег» не выпал в июле. Тем про геометрию и композицию (форма, линии, симметрия) тоже нет.
-- Файлы можно дополнять в любой момент. Темы различаются по названию, поэтому названия в обоих файлах должны быть разными.
+### Themes
+- 500 themes in two files, one per line, «Title — hint»:
+  - **simple, 350** — `themes/simple.txt`: can be shot within a minute wherever you are, no props, no special light, no searching;
+  - **creative, 150** — `themes/creative.txt`: needs some thought, searching or inventing (light, angles, mood, games).
+- **A simple theme is picked with probability 70%, a creative one with 30%.** Pool sizes follow the same ratio, so both run out at the same pace.
+- **A theme with at least one photo is used up for that pair** and never offered again (derived from the database, no explicit flag). Themes shown without photos (or rerolled away) may come back, but not within the last 30 shows; the least-shown themes go first.
+- If a pool is exhausted the other one is used; if everything is used, old themes repeat and a warning is logged (~1.5 years at one theme a day).
+- No seasonal themes and no geometry/composition themes. Titles are the theme keys, so they must be unique across both files.
 
-Примеры:
-- **простые:** «Где я сейчас — место, где ты в эту минуту», «Что на столе — как есть, ничего не убирая», «Обед — что на тарелке», «Что-то жёлтое — первое жёлтое, что попадётся»
-- **посложнее:** «Тень вместо предмета — сними не вещь, а её тень», «Тишина — сними тишину», «Картина — повтори известную картину подручными средствами»
+### Theme reroll
+- «🔄 Другая тема» under the morning message: anyone may press it while nobody has sent a photo, at most 3 times a day.
+- **The new theme is always a simple one.** Both get it, with a note who changed it.
 
-### Смена темы
-- Под утренним сообщением есть кнопка «🔄 Другая тема». Нажать её может любой из вас, но только пока никто не прислал фото и не больше 3 раз за день.
-- **Другая тема всегда берётся из простых.** Если пришла сложная, а готовиться не хочется, хватит одного нажатия.
-- Новую тему получают оба, с пометкой, кто её сменил.
+### Photo intake
+- Accepts compressed photos and image files; the exchange returns them in the same form.
+- One photo per person per day; a new photo before the exchange replaces the old one; the caption is kept and shown in the exchange.
+- From an album only one photo is taken (the bot says so).
+- The partner is notified only about the first photo of the day.
+- Before the theme: «Тема ещё не пришла…»; after the exchange: «Обмен за этот день уже был…»; text/stickers/video get a short hint.
+- **The day of a photo is taken from the message send time,** not processing time, so a photo sent at 23:58 during a restart still counts for its day.
 
-### Приём фото
-- Бот принимает обычное фото и картинку файлом (без сжатия). При обмене отдаёт фото в том же виде, в каком получил.
-- У каждого одно фото в день. Если до обмена прислать другое, оно заменит прежнее.
-- Подпись к фото сохраняется и показывается при обмене.
-- Если прислать альбом, бот возьмёт первое фото и сообщит об этом.
-- Второй участник получает «👀 <имя>: фото готово и ждёт обмена». Уведомление приходит только за первое фото дня, замена его не вызывает.
-- Если фото пришло раньше темы, бот ответит «Тема ещё не пришла, будет в 09:00». Если после обмена: «На сегодня всё, завтра новая тема».
-- На текст, стикеры и видео бот отвечает короткой подсказкой.
-- День для фото определяется по времени отправки сообщения, а не по времени его обработки. Если бот в этот момент перезапускался, фото, отправленное в 23:58, всё равно засчитается в свой день.
+### Exchange: mutual only
+- At 21:00:
+  - **both sent:** each gets an album (each photo captioned with the author's name and caption) and the evening card;
+  - **one sent:** «<name> пока без фото…» to the sender, «<name>: фото готово и ждёт тебя — пришли своё до полуночи» to the other;
+  - **nobody sent:** «Сегодня обошлось без фото».
+- From 21:00 to 23:59 the exchange happens as soon as the second photo arrives.
+- At 00:00 the day closes; an unpaired photo is never shown to the partner, including in the history.
+- If one photo is a file and the other a compressed photo, the exchange goes as two separate messages (Telegram cannot mix them in one album).
 
-### Обмен: только в обмен
-- Что происходит в 21:00:
-  - **прислали оба**: каждый получает альбом из двух фото (под каждым имя и подпись автора) и строку с темой и серией;
-  - **прислал один**: ему бот пишет «<имя> пока без фото. Если фото придёт до полуночи, обмен случится сразу», а второму — «<имя>: фото готово и ждёт тебя — пришли своё до полуночи, и сразу его увидишь»;
-  - **никто не прислал**: «Сегодня без обмена, завтра новая тема».
-- С 21:00 до 23:59 обмен происходит сразу, как только появляется второе фото.
-- Даже если оба прислали фото днём, бот ждёт 21:00 и раньше ничего не показывает.
-- В 00:00 день закрывается. Фото, оставшееся без пары, второй участник уже не увидит, в том числе в архиве.
-- Если одно фото пришло файлом, а другое обычным фото, обмен придёт двумя отдельными сообщениями: Telegram не кладёт фото и файлы в один альбом.
+### Open early (both must agree)
+- When the second photo arrives, «Принято» and «фото готово» get the line «Оба фото на месте 📸 … или раньше, если вы оба нажмёте «Открыть сейчас»» and the button.
+- First press: answer «Ждём, пока <name> тоже нажмёт», the partner gets «🔓 <name> хочет открыть фото сейчас» with the button. Repeated presses change nothing.
+- **Both pressed:** album + card immediately. The evening then counts as done (nothing at 21:00, no reminder); the streak counts as usual.
+- Otherwise the exchange happens at 21:00. `/today` shows who already wants to open and offers the button.
+- Early open sets `revealed_at` first and then exchanges, so "exchanged ⇒ revealed" holds everywhere.
 
-### Открыть раньше — только если согласны оба
-- **Кнопка появляется, когда пришло второе фото.** К ответу «Принято» у второго и к уведомлению «фото готово» у первого добавляется строка «Оба фото на месте 📸 Обмен в 21:00 — или раньше, если вы оба нажмёте «Открыть сейчас»» и кнопка «🔓 Открыть сейчас». Отдельных сообщений нет.
-- **Нажал первый.** Ему приходит ответ «Ждём, пока <имя> тоже нажмёт», второму — «🔓 <имя> хочет открыть фото сейчас» с той же кнопкой. Повторное нажатие ничего не меняет.
-- **Нажали оба — обмен сразу.** Приходят альбом и карточка с реакциями, как вечером. Вечернее событие при этом считается наступившим, поэтому в 21:00 ничего не придёт, напоминание тоже не сработает, а серия засчитывается как обычно.
-- **Второй так и не нажал.** Тогда обмен пройдёт в 21:00, как всегда.
-- **В `/today` при двух фото** видно, кто уже хочет открыть, и есть та же кнопка.
-- **Кто нажал, хранится в таблице `early_open`.** Ранний обмен сначала ставит `revealed_at`, потом проводит обмен, поэтому из «обмен был» всегда следует «вечер был».
+### Reminder
+- Three hours before the exchange (18:00 by default), only to those without a photo; skipped if it would fall before the theme time.
 
-### Напоминание
-- Приходит за 3 часа до обмена (по умолчанию в 18:00) и только тому, кто ещё не прислал фото.
-- Если по расписанию напоминание попадает на время раньше темы, бот его не отправляет.
+### Evening card, reactions and replies
+- **After the album comes one card:** theme, date, author (if the theme came from the jar), streak, milestones (7/30/100/365 days) and «🏆 Новый рекорд серии!», plus reaction buttons ❤️ 🔥 😂 😮 👏.
+- **Reactions:** the partner gets «<name> ставит 🔥 твоему фото «Тема»»; the choice can be changed; the chosen one is marked on the button.
+- **Buttons, not native reactions:** Telegram does not send `message_reaction` updates to a bot in a private chat (the bot would have to be a chat administrator). Verified in the docs and confirmed by third-party tests.
+- **Replies:** a text reply to the partner's photo, one's own photo or the card is forwarded: «💬 <name> о твоём фото «Тема»: …». The bot maps sent messages to photos in `sent_messages`; replies to anything else are not forwarded and are not stored.
+- The card is re-delivered after a restart together with the album; future features add lines/buttons to it via `Feature.card`.
 
-### Вечерняя карточка, реакции и ответы
-- **После альбома приходит одна карточка:** тема, дата, автор темы (если её предложил кто-то из вас), серия и кнопки реакций ❤️ 🔥 😂 😮 👏.
-- **Реакции.** После нажатия на кнопку партнёр получает «<имя> ставит 🔥 твоему фото «Тема»». Можно передумать и нажать другую, повторное нажатие той же ничего не делает. Выбранная реакция отмечается на кнопке.
-- **Почему кнопки, а не реакции Telegram.** Родные реакции (долгое нажатие на фото) Telegram боту в личном чате не присылает: по документации для этого бот должен быть администратором чата, а в личке это невозможно. Это подтверждают и те, кто проверял на практике.
-- **Ответы.** Если ответить (reply) текстом на фото партнёра, на своё фото или на карточку, бот перешлёт текст второму: «💬 <имя> о твоём фото «Тема»: …». Для этого бот запоминает, какое отправленное сообщение чьё фото (`sent_messages`). Ответ на любое другое сообщение бот не пересылает.
-- **Карточка досылается после рестарта вместе с альбомом** (отдельная отметка в `deliveries`). Будущие фичи могут добавить в неё свою строку и кнопки, не трогая ядро.
+### Partner themes (`/addtheme`)
+- `/addtheme Окно — вид из любого окна` or just `/addtheme` (the bot asks). The hint is optional; the title is 2–50 characters.
+- The theme goes into the pair's jar; the partner does not see it in advance; the author sees how many of their themes are waiting; a «🗑 Удалить» button works until the theme is shown.
+- **A jar theme is picked at most every other day,** alternating authors, oldest first; on other days the usual 70/30 pick applies.
+- The theme message, `/today`, the card and the history show «✍️ Тему предлагает <name>».
+- If a jar theme is rerolled, it goes back to the jar.
 
-### Темы друг для друга (`/addtheme`)
-- **Добавление.** `/addtheme Окно — вид из любого окна` или просто `/addtheme`, и бот спросит тему. Подсказка необязательна, она пишется через тире. Название — от 2 до 50 символов.
-- **Тема уходит в копилку.** Партнёр её заранее не видит, автору бот показывает, сколько его тем ждёт очереди. Под подтверждением есть кнопка «🗑 Удалить» на случай опечатки: она работает, пока тема не выпала.
-- **Когда выпадает.** Из копилки бот берёт тему не чаще чем через день, по очереди от каждого автора, начиная с самой старой. В остальные дни выбор обычный, 70/30.
-- **Подпись автора.** В сообщении с темой, в `/today`, в карточке и в архиве есть строка «✍️ Тему предлагает <имя>».
-- **Смена кнопкой.** Если такую тему сменили кнопкой «Другая тема», она возвращается в копилку и выпадет в другой день.
+### History and streak
+- `/history`: days as buttons, 10 per page, «15.10 · Отражения · ✅» (✅ exchange, 🌓 only one photo, ▫️ no photos). A day with an exchange is shown as photos + the card (reactions visible, can react to old photos); the mutual rule applies here too.
+- **Streak** = consecutive days with an exchange; today does not break it until it ends; days the bot slept through (`skipped`) do not break it either.
+- Shown in the morning theme, the reminder («На кону серия»), the card (milestones, record — only when a previous best is beaten, never on the first streak), `/today` and `/history` (with the record).
 
-### Архив и серия
-- Команда `/history` показывает дни в виде кнопок, по 10 на страницу, со стрелками для листания. Пример кнопки: «15.10 · Отражения · ✅». Значки: ✅ обмен был, 🌓 фото прислал только один, ▫️ фото не было.
-- По нажатию на день бот присылает фото за этот день. Правило обмена действует и здесь: фото партнёра видно только за дни, когда обмен состоялся. За дни с обменом бот присылает ещё и карточку: в ней видны реакции, и на старые фото тоже можно отреагировать.
-- 🔥 **Серия** — это число дней подряд, когда был обмен. Пока сегодняшний день не закончился, он серию не обрывает, а дни, которые бот проспал, — тоже.
-- **Где видна серия:**
-  - **в утренней теме:** «🔥 Серия: 5 дней подряд»;
-  - **в напоминании тому, кто ещё не прислал фото:** «🔥 На кону серия: 5 дней»;
-  - **в вечерней карточке:** вехи 7, 30, 100 и 365 дней («🎉 Неделя подряд!» и так далее) и «🏆 Новый рекорд серии!», когда побит прежний рекорд (только начиная со второй серии);
-  - **в `/today` и в `/history`.** В `/history` ещё и рекорд.
-
-### Настройки (`/settings`)
-- Время темы и время обмена меняются прямо в боте. Менять может любой из вас, а второй получит уведомление. Время пишется текстом, например «8:30».
-- Время темы должно быть раньше времени обмена.
-- Новое время действует сразу. Если сегодня оно уже прошло, событие случится в течение минуты, и бот об этом предупредит. Исключение: тема, которая сегодня уже отправлена, повторно не придёт.
-- По умолчанию тема приходит в 09:00, обмен в 21:00. Часовой пояс задаётся переменной `TIMEZONE` в Railway (по умолчанию `Europe/Moscow`): он меняется редко, поэтому в боте его не настраиваем.
+### Settings (`/settings`)
+- Theme time, exchange time and the pair's time zone (common zones as buttons, any IANA name as text). Either partner can change them; both are notified.
+- Theme time must be earlier than exchange time. A change applies immediately; if the new time has already passed today, the event happens within a minute (the bot warns). A theme already sent today is not sent again.
 
 ---
 
-## 3. Команды
+## 3. Commands
 
-| Команда | Что делает |
+| Command | What it does |
 |---|---|
-| `/start` | вход по приглашению; тем, кто уже в боте, показывает краткую справку |
-| `/today` | тема дня, у кого уже есть фото, сколько осталось до обмена, серия |
-| `/history` | архив и серия |
-| `/addtheme` | предложить тему в копилку |
-| `/settings` | расписание |
-| `/help` | правила коротко |
-| `/dev` | служебные кнопки для ручной проверки: тема сейчас · напоминание сейчас · обмен сейчас · сбросить сегодня · очистить историю. Работает только при `DEBUG=true` |
+| `/start` | create a pair / join by link; in a pair — short help |
+| `/today` | today's theme, who has a photo, time to exchange, streak, early-open button |
+| `/history` | history, streak and record |
+| `/addtheme` | add a theme to the jar |
+| `/settings` | schedule and time zone |
+| `/leave` | leave the pair (with confirmation) |
+| `/help` | rules in short |
+| `/dev` | service buttons for manual checks (theme now · reminder now · exchange now · reset today · clear history). Only with `DEBUG=true` |
 
 ---
 
-## 4. Техника
+## 4. Technical
 
-### Стек (тот же, что в твоих других ботах)
-- **Python 3.12 + aiogram 3**, режим polling: бот сам опрашивает Telegram, поэтому ему не нужны ни веб-сервер, ни домен.
-- **SQLite (aiosqlite) на Railway Volume**: всё в одном сервисе, отдельная база не нужна.
-- **pydantic-settings + python-dotenv** для конфига, **loguru** для логов, **tzdata**, чтобы часовые пояса работали в slim-образе.
-- Сами файлы фото бот не хранит: они остаются в Telegram, а в базе лежит только `file_id`.
+### Stack
+- **Python 3.12 + aiogram 3** in polling mode (no web server, no domain).
+- **SQLite (aiosqlite) on a Railway Volume.** A separate Postgres is not needed: it would also live on a volume, costs a separate service and does not help against deploy-time losses.
+- **pydantic-settings + python-dotenv** for config, **loguru** for logs, **tzdata** for time zones in the slim image.
+- Photo files are never stored: Telegram keeps them, the database stores `file_id` only.
 
-### Структура
+### Structure
 ```
 Photochki_bot/
 ├── PLAN.md · CLAUDE.md · README.md
 ├── requirements.txt · Dockerfile · .dockerignore · .env.example · .gitignore
-├── themes/                 simple.txt — 350 простых тем, creative.txt — 150 посложнее
+├── themes/                 simple.txt — 350 simple themes, creative.txt — 150 creative
 └── bot/
-    ├── __main__.py         запуск: конфиг → база → фичи → планировщик → polling
-    ├── config.py           переменные окружения
-    ├── app.py              App, общий контекст (bot, база, часы, темы, фичи); его получают все хендлеры и задачи
-    ├── feature.py          Feature: роутер, задачи планировщика, команды меню, вклад в вечернюю карточку, хуки
-    ├── db.py               подключение к SQLite и миграции
-    ├── repo.py             все запросы к базе
-    ├── themes.py           источники тем: две группы из themes/, выбор 70/30
-    ├── daily.py            логика дня: тема, смена темы, фото, напоминание, обмен, серия
-    ├── scheduler.py        цикл раз в 30 секунд, вызывает задачи всех фич
-    ├── access.py           middleware: пускает только участников
-    ├── texts.py            все тексты бота
+    ├── __main__.py         startup: config → db → Core → features → scheduler → polling
+    ├── config.py           environment variables
+    ├── app.py              Core (shared context) and App (one pair's context)
+    ├── feature.py          Feature: router, scheduler jobs, menu commands, card part, hooks
+    ├── db.py               SQLite connection, migrations, volume check
+    ├── repo.py             all SQL: Registry (pairs and members) and Repo (one pair)
+    ├── themes.py           theme sources: two pools from themes/, 70/30 pick
+    ├── daily.py            day logic: theme, reroll, photos, reminder, exchange, card, streak
+    ├── scheduler.py        every 30 s: all jobs for every complete pair
+    ├── access.py           middleware: finds the sender's pair, injects app and user
+    ├── ui.py               small shared UI helpers
+    ├── texts.py            all bot texts (Russian)
     └── features/
-        ├── __init__.py     реестр фич; порядок в нём = порядок роутеров
-        ├── daily_theme.py  утренняя тема, «Другая тема», /today
-        ├── photos.py       приём фото
-        ├── early_open.py   «Открыть сейчас», если согласны оба
-        ├── partner_themes.py  /addtheme: копилка тем друг для друга
-        ├── reactions.py    реакции в вечерней карточке и пересылка ответов на фото
-        ├── reminder.py     напоминание
-        ├── exchange.py     вечерний обмен и досылка пропущенных дней
+        ├── __init__.py     feature registry; its order = router order
+        ├── daily_theme.py  morning theme, «Другая тема», /today
+        ├── photos.py       photo intake
+        ├── early_open.py   «Открыть сейчас» (both must agree)
+        ├── partner_themes.py  /addtheme
+        ├── reactions.py    card reactions and reply forwarding
+        ├── reminder.py     reminder
+        ├── exchange.py     evening exchange, closing days the bot slept through
         ├── history.py      /history
         ├── settings.py     /settings
-        ├── onboarding.py   /start, /help, приглашение
-        ├── dev.py          /dev (только при DEBUG=true)
-        └── fallback.py     ответ на всё остальное (всегда последний)
+        ├── onboarding.py   /start, pair creation, joining by link, /leave, /help
+        ├── dev.py          /dev (only with DEBUG=true)
+        └── fallback.py     answers everything else (always last)
 ```
-Правило «только в обмен» описано один раз, в `daily.py`. Им пользуются вечерний обмен, обработка опоздавших фото, архив и `/dev`, поэтому поведение везде одинаковое.
+The mutual rule lives in exactly one place, `daily.visible_photos()`; the exchange, late photos, the history and `/dev` all use it.
 
-### Расширяемость
-Бот устроен так, чтобы новые фишки добавлялись без переделки ядра.
-- **Каждая фича — отдельный модуль в `bot/features/`** с объектом `Feature`. В нём свой роутер (команды и кнопки), свои задачи планировщика, свои пункты меню и хуки. Чтобы включить фичу, её достаточно добавить в реестр `features/__init__.py`.
-- **Задачи планировщика — обычные async-функции `job(app, now)`.** Каждая сама решает, пора ли ей работать, и бронирует событие в базе. Так потом добавятся еженедельные итоги, дневные подсказки и подобное.
-- **Вечерняя карточка собирается из частей.** Шапку (тема, дата, автор, серия) строит ядро, а каждая фича может добавить свои строки и ряд кнопок через `Feature.card`. Сейчас так подключены реакции, потом можно добавить ачивки или ссылку на коллаж.
-- **Хук `on_exchange` вызывается после каждого обмена** для побочных действий, например чтобы прислать коллаж отдельным сообщением.
-- **Источники тем подключаются через общий интерфейс.** Сейчас это список из файла. Позже можно добавить AI, а список оставить запасным.
-- **Схема базы меняется только через миграции.** Новая миграция добавляется в конец списка в `bot/db.py`, бот применяет её при старте, данные на volume сохраняются.
-- **Настройки хранятся как ключ-значение,** поэтому новая настройка не требует миграции.
+### Pairs inside the code
+- `Core` — shared context: bot, connection, `Registry`, config, themes, features, clock (`core.clock`, replaceable in checks).
+- `App` — one pair's context with the same interface the day logic and features use (`app.repo`, `app.today()`, `app.invite_link`, …): `Repo(conn, pair_id)` scopes every query to the pair, time is in the pair's zone (pair setting `timezone`, default `TIMEZONE`).
+- `access.py` resolves the sender's pair and injects `app`/`user`; the scheduler builds an `App` for every complete pair on each tick. Any new query on pair data must filter by `pair_id`.
 
-### База
+### Extensibility
+- **A feature is a module in `bot/features/` with a `Feature` object** (router, jobs, menu commands, card part, hooks), enabled by one line in the registry.
+- **Scheduler jobs are plain async functions `job(app, now)`** that decide themselves whether it is time and claim the event in the database.
+- **Evening card:** the core builds the header (theme, date, author, streak), features add lines and a button row via `Feature.card`.
+- **`on_exchange` hook** for side effects after an exchange (e.g. a collage); called once and may be missed if the bot crashes mid-exchange — put important things into the card instead.
+- **Theme sources** share one interface: a list now; an AI source with the list as fallback is possible later.
+- **Schema changes only through new migrations** appended to `MIGRATIONS` in `bot/db.py`; pair settings are key-value and need no migration.
+
+### Database
 ```
-users        user_id PK · name · joined_at
-settings     key PK · value                  theme_time, reveal_time, invite_code, …
-days         date PK (дата в часовом поясе пары) · theme_title · theme_hint · theme_author
-             · theme_sent_at · reminder_sent_at · revealed_at · exchanged_at · skipped
-theme_log    id · date · title · shown_at    все показанные темы, включая заменённые
-submissions  PK (date, user_id) · file_id · kind (photo | document) · caption
-             · media_group_id · sent_at
-deliveries   PK (date, user_id, kind) · delivered_at        кому реально ушли тема, альбом и карточка
-custom_themes  id · author_id · title · hint · created_at · shown_on     копилка /addtheme
-reactions    PK (date, user_id) · emoji · at                реакция на фото партнёра за день
-early_open   PK (date, user_id) · at                        кто согласен открыть фото раньше
-sent_messages  PK (chat_id, message_id) · date · owner_id     чьё фото в каком сообщении — для ответов
+pairs          id PK · invite_code UNIQUE · created_at · closed_at
+pair_settings  PK (pair_id, key) · value         theme_time, reveal_time, timezone
+users          user_id PK · name · joined_at · pair_id (NULL — not in a pair)
+days           PK (pair_id, date) · theme_title · theme_hint · theme_author
+               · theme_sent_at · reminder_sent_at · revealed_at · exchanged_at · skipped
+theme_log      id · pair_id · date · title · shown_at       every shown theme, rerolled ones too
+submissions    PK (date, user_id) · pair_id · file_id · kind (photo | document) · caption
+               · media_group_id · sent_at
+deliveries     PK (date, user_id, kind) · pair_id · delivered_at   who really got theme / album / card
+custom_themes  id · pair_id · author_id · title · hint · created_at · shown_on   /addtheme jar
+reactions      PK (date, user_id) · pair_id · emoji · at
+early_open     PK (date, user_id) · pair_id · at              who agreed to open early
+sent_messages  PK (chat_id, message_id) · pair_id · date · owner_id   whose photo is in which message
+settings       key PK · value                               legacy global settings (unused)
 ```
-- `theme_author` — кто предложил тему дня через `/addtheme` (пусто, если тема из файла).
-- `revealed_at` — вечернее событие в 21:00 уже произошло.
-- `exchanged_at` — оба получили фото друг друга. Этот момент может наступить позже 21:00, если кто-то опоздал.
-- `skipped` — бот проспал весь день до времени обмена. Такой день не рвёт серию.
-- Каждое событие сначала «бронируется» атомарным `UPDATE … WHERE … IS NULL`, и только потом отправляются сообщения. Поэтому даже при гонке или перезапуске одно и то же сообщение не уйдёт дважды.
-- Использованные темы (с фото) бот вычисляет по `days` и `submissions` и больше их не предлагает. Остальные выбирает по `theme_log`: сначала те, что показывались реже других, а 30 последних не повторяет.
+- `revealed_at` — the evening event happened; `exchanged_at` — both got each other's photos (may be after 21:00); `skipped` — the bot slept through the theme time until the exchange time.
+- **Events are claimed before they are sent:** atomic `UPDATE … WHERE <mark> IS NULL`, only the first caller gets True. The connection runs in autocommit (`isolation_level=None`).
+- A person is in one pair at a time, so the old `(date, user_id)` keys stay unique.
 
-### Планировщик
-Вместо cron-задач работает простой цикл: раз в 30 секунд он сверяет текущее время с базой.
-1. Время темы наступило, а тема не отправлена → выбрать тему и разослать.
-2. Время напоминания наступило, а напоминание не отправлено → напомнить тем, у кого нет фото.
-3. Время обмена наступило, а обмена ещё не было → провести обмен.
+### Scheduler
+A loop every 30 seconds (not cron) checks the clock of every complete pair against the database: theme due and not sent → pick and send; reminder due → remind those without a photo; exchange due → exchange. State lives in the database, so after a restart nothing is lost or duplicated:
+- the bot was down at exchange time and came back after midnight → yesterday's exchange is done at start;
+- the bot slept through the morning until the exchange time → the day is skipped so that theme and exchange do not arrive together;
+- pending updates are not dropped at start, so photos sent during a deploy are processed.
 
-Состояние дня хранится в базе, а не в памяти. После перезапуска или деплоя ничего не теряется и не дублируется: цикл просто доделывает пропущенное.
-- Бот лежал во время обмена и поднялся уже после полуночи → при старте он проводит вчерашний обмен.
-- Бот лежал всё утро и поднялся уже после времени обмена → день пропускается, чтобы тема и обмен не пришли одновременно.
-- Накопившиеся обновления при старте не удаляются, поэтому фото, присланные во время деплоя, тоже будут обработаны.
-
-### Надёжность при деплое
-Деплоить можно в любое время, в том числе днём, когда кто-то из вас уже прислал фото. Фото не должно потеряться.
-- **База — SQLite на Volume.** Деплой её не трогает. Отдельный Postgres не нужен: он хранит данные так же, на Volume, стоит денег отдельным сервисом и от потерь при деплое не защищает. Слабые места — в обработке сообщений и рассылке, а не в хранилище.
-- **Без Volume на Railway бот не стартует.** В логах будет понятная ошибка: лучше упасть при деплое, чем потом молча потерять фото и историю. Признак Railway — переменная `RAILWAY_ENVIRONMENT_ID`. Volume бот узнаёт по `RAILWAY_VOLUME_MOUNT_PATH`, и база должна лежать внутри этого пути.
-- **Сообщения обрабатываются по одному.** Telegram считает сообщение доставленным, только когда бот его обработал. Если бота остановят посреди обработки, Telegram пришлёт сообщение заново после старта. Повторное фото бот узнаёт: отвечает «принято», а партнёру второй раз не пишет.
-- **Бот отмечает в `deliveries`, кому ушли тема и альбом обмена.** Если он упал посреди рассылки, то через минуту после старта дошлёт остальным. Тему досылает, пока не наступил вечер, альбом — в течение двух дней. Строка с серией после обмена в этом случае может не прийти, но фото дойдут.
-- **Если фото не удалось сохранить из-за ошибки, бот просит прислать его ещё раз**, а не молчит.
-- **При старте бот пишет в логи, где лежит база, сколько участников и сколько фото пришло за сегодня.** По этой строке после деплоя видно, что ничего не пропало.
+### Reliability on deploy
+Deploys are allowed any time, including during the day when a photo was already sent; no photo may be lost.
+- **No volume on Railway → the bot refuses to start** (`RAILWAY_ENVIRONMENT_ID` set and the database not under `RAILWAY_VOLUME_MOUNT_PATH`).
+- **Updates are processed one by one** (`handle_as_tasks=False`): Telegram confirms an update only after it was handled; an interrupted update is redelivered and a repeated photo is recognised (`SaveResult` «same», no second notification).
+- **`deliveries` records who really got the theme, the album and the card;** `daily.redeliver` (a core scheduler job) re-sends to the rest for events older than a minute (theme until the evening, exchange for two days).
+- **If saving a photo fails, the bot asks to resend it** instead of staying silent.
+- **The startup log shows the database path, the number of pairs and members.**
+- In production logs, tracebacks do not include variable values (`diagnose` only with `DEBUG`).
 
 ---
 
 ## 5. Railway
-- Репозиторий на GitHub — `MrBoomer1981/OurSpark`. Сервис на Railway подключён к репозиторию, и каждый push в `main` запускает деплой.
-- Сборка по `Dockerfile` на базе `python:3.12-slim`: Railway находит его в корне сам. Рестарт при падении — по умолчанию Railway, до 10 раз. Healthcheck и публичный домен не нужны.
-- Конфига Railway в репозитории нет. `railway.toml` (Config as Code) Railway объявил устаревшим и читает только до 1 декабря 2026, а он лишь повторял поведение по умолчанию. Новый формат Infrastructure as Code (`.railway/railway.ts`) не берём: это npm-пакет в Python-проекте, применение через `railway config apply` вместо push и риск удалить Volume, если его не описать в файле.
-- Volume монтируется в `/app/data`, там лежит `bot.db`. Подключить его можно в интерфейсе Railway или командой `railway volume add`. Сервис с volume Railway при деплое сначала останавливает, а потом запускает новую версию, поэтому две копии бота никогда не работают одновременно и не мешают друг другу в polling.
+- Repository `MrBoomer1981/OurSpark` (public, no secrets in code); every push to `main` deploys.
+- Built from `Dockerfile` (python:3.12-slim), detected automatically. Restart on failure — Railway default (up to 10). No healthcheck, no public domain.
+- **No Railway config file on purpose:** `railway.toml` (Config as Code) is deprecated (read until 2026-12-01) and only repeated the defaults; Infrastructure as Code (`.railway/railway.ts`) would add an npm package, `railway config apply` instead of push and a risk of deleting the volume if it is not declared.
+- Volume `ourspark-volume` mounted at `/app/data` (holds `bot.db`). With a volume Railway never runs two copies at once, so polling never conflicts.
+- Region: currently `asia-southeast1` (Singapore); a European region would be closer to Telegram's servers (planned move).
 
-| Переменная | Значение |
-|---|---|
-| `BOT_TOKEN` | токен от @BotFather |
-| `INVITE_CODE` | необязательно. Без неё бот сам сгенерирует код. Если задаёшь: латиница, цифры, `_` и `-`, не длиннее 64 символов |
-| `TIMEZONE` | `Europe/Moscow` |
-| `DEBUG` | `false`; значение `true` включает `/dev` |
-| `DB_PATH` | можно не задавать: по умолчанию `data/bot.db`, на Railway это `/app/data/bot.db` |
+| Variable | Default | Meaning |
+|---|---|---|
+| `BOT_TOKEN` | — | token from @BotFather |
+| `TIMEZONE` | `Europe/Moscow` | time zone of new pairs; each pair can change its own |
+| `NEW_PAIRS` | `true` | `false` closes registration of new pairs |
+| `DEBUG` | `false` | `true` enables `/dev` and verbose logs |
+| `DB_PATH` | `data/bot.db` | SQLite path (`/app/data/bot.db` on Railway) |
 
-Локальный запуск необязателен. Если он понадобится, нужен отдельный тестовый бот: один токен нельзя одновременно слушать из двух мест.
-
----
-
-## 6. Этапы
-
-1. **Сборка — готово.** Весь v1 целиком: каркас, темы, фото и обмен, напоминание, архив и серия, настройки, `/dev`, Dockerfile, README. Код лежит в `main` репозитория `MrBoomer1981/OurSpark`.
-2. **Подготовка (делаешь ты, когда будет время).** Бот в @BotFather, проект на Railway из репозитория `MrBoomer1981/OurSpark`, volume в `/app/data`, переменные `BOT_TOKEN` и `DEBUG=true`. Пошаговая инструкция — в README.
-3. **Проверка вдвоём.** Ссылку-приглашение берёшь из логов Railway, вы оба входите по ней и проходите чек-лист из раздела 7 с помощью `/dev`.
-4. **Запуск.** В `/dev` нажать «Очистить историю», затем выставить `DEBUG=false`. После этого начинается первый настоящий день.
+A local run needs a separate test bot: one token cannot be polled from two places.
 
 ---
 
-## 7. Проверка руками (вместо тестов)
-Перед тем как отдать код, я проверяю, что бот собирается, а логика дня отрабатывает без ошибок. После деплоя вы вдвоём проходите сценарии в Telegram:
-- [ ] Ссылка с кодом пускает, без кода не пускает, третий человек войти не может
-- [ ] Тема приходит обоим; «Другая тема» работает до первого фото и не больше 3 раз
-- [ ] Принимаются обычное фото и файл; работают замена, подпись, альбом
-- [ ] Обмен: прислали оба / прислал один / никто; опоздавшее фото до полуночи
-- [ ] Редеплой посреди дня: ничего не пропало и не пришло дважды
-- [ ] Архив: фото партнёра без обмена не видно, серия правильная
+## 6. Milestones
+1. **v1** — one pair: themes, photos, mutual exchange, reminder, history and streak, settings, `/dev`. Done.
+2. **Themes 70/30** — 500 themes, used themes never repeat, reroll gives a simple theme. Done.
+3. **Reliability on deploy** — volume check, one-by-one updates, deliveries and re-delivery. Done.
+4. **Evening card, reactions and replies, `/addtheme`, streak milestones and record.** Done.
+5. **Open early when both agree.** Done.
+6. **Many pairs** — pairs, per-pair time zone, `/leave`, `NEW_PAIRS`, migration 5; code cleanup; README for users and self-hosters. Current.
+7. **Move to a European Railway region** — after a database backup, in a quiet hour. Next.
 
 ---
 
-## 8. Не входит в v1
-- Коллаж дня
-- Темы от AI (можно добавить позже, список останется запасным вариантом)
-- Больше двух участников или несколько пар
-- Видео и кружки
-- Смена часового пояса из бота
-- Резервная копия фото на диск
+## 7. Manual check (instead of tests)
+Ad-hoc verification scripts stay outside the repository. In Telegram, ideally with two people:
+- [ ] `/start` → «Создать пару» → link; the partner joins; a third person cannot join; a broken link is rejected
+- [ ] the theme arrives for both; «Другая тема» works until the first photo, at most 3 times
+- [ ] compressed photo and file; replacement, caption, album
+- [ ] exchange: both / one / nobody; a late photo before midnight; «Открыть сейчас» only when both press
+- [ ] the card: reactions, replies to photos and to the card
+- [ ] `/addtheme`, deleting a jar theme, a jar theme with the author line
+- [ ] a second pair with another time zone gets its theme at its own time; `/leave`
+- [ ] a redeploy in the middle of the day: nothing lost or duplicated
+
+---
+
+## 8. Not in scope yet / ideas
+- Collage of the day; AI-generated themes; weekly recap album; achievements
+- Video and video notes
+- A Mini App gallery; archive export
+- Photo backups to disk

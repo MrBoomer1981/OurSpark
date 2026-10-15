@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
 from datetime import date
 from math import ceil
 
 from aiogram import F, Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import (
@@ -18,7 +16,7 @@ from aiogram.types import (
     Message,
 )
 
-from bot import daily, texts
+from bot import daily, texts, ui
 from bot.app import App
 from bot.feature import Feature
 from bot.repo import User
@@ -75,9 +73,7 @@ async def cmd_history(message: Message, app: App) -> None:
 async def on_page(callback: CallbackQuery, callback_data: HistoryCallback, app: App) -> None:
     text, keyboard = await render_page(app, int(callback_data.value))
     await callback.answer()
-    if isinstance(callback.message, Message):
-        with suppress(TelegramBadRequest):  # «message is not modified» при повторном нажатии
-            await callback.message.edit_text(text, reply_markup=keyboard)
+    await ui.edit_message(callback, text, keyboard)
 
 
 @router.callback_query(HistoryCallback.filter(F.action == "day"))

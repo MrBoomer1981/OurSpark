@@ -6,10 +6,7 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
-
 from aiogram import F, Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
@@ -22,7 +19,7 @@ from aiogram.types import (
     Message,
 )
 
-from bot import texts
+from bot import texts, ui
 from bot.app import App
 from bot.feature import Feature
 from bot.repo import User
@@ -101,9 +98,7 @@ async def on_delete(
         await callback.answer(texts.ADDTHEME_TOO_LATE, show_alert=True)
         return
     await callback.answer()
-    if isinstance(callback.message, Message):
-        with suppress(TelegramBadRequest):
-            await callback.message.edit_text(texts.ADDTHEME_DELETED)
+    await ui.edit_message(callback, texts.ADDTHEME_DELETED)
 
 
 feature = Feature(

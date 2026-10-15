@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
-
 from aiogram import Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
-from bot import daily, texts
+from bot import daily, texts, ui
 from bot.app import App
 from bot.feature import Feature
 from bot.themes import ListThemes
@@ -74,9 +76,7 @@ async def on_action(callback: CallbackQuery, callback_data: DevCallback, app: Ap
         case "clear":
             await app.repo.clear_history()
     await callback.answer(texts.DEV_DONE if done else texts.DEV_NOT_NOW, show_alert=not done)
-    if isinstance(callback.message, Message):
-        with suppress(TelegramBadRequest):  # «message is not modified», если ничего не поменялось
-            await callback.message.edit_text(await render(app), reply_markup=keyboard())
+    await ui.edit_message(callback, await render(app), keyboard())
 
 
 feature = Feature(name="dev", router=router)
