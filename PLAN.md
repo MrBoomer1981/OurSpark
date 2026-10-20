@@ -1,259 +1,327 @@
-# OurSpark — daily photo for two: plan and spec
+# Воронье гнездо — план перестройки
 
-A Telegram bot for couples. Every morning it sends a theme, during the day each partner takes a photo and sends it to the bot, in the evening the bot runs the exchange: each partner sees the other's photo. One bot serves any number of pairs. Hosted on Railway.
+Проект перестраивается из фото-бота OurSpark в «Воронье гнездо» — асинхронную игру, в которой пара растит общего питомца. Одно веб-приложение работает и как Telegram Mini App, и как устанавливаемое PWA. Продуктовое ТЗ — `voronye_gnezdo_mvp_spec.md`; где ТЗ и этот план расходятся, прав план.
 
-> Project rule: plan first, then code. No tests; behaviour is checked by hand in Telegram.
+Фото-бот работает в проде без изменений до этапа 6; его спецификация переехала в `docs/photo-bot.md`.
 
----
-
-## 1. A day, step by step
-
-Defaults: theme at 09:00, exchange at 21:00, in the pair's time zone.
-
-| Time | What happens |
-|---|---|
-| 09:00 | Both get the theme («📸 Тема дня — «Отражения»…», hint, «Жду фото до 21:00», streak line) with a «🔄 Другая тема» button |
-| daytime | Each sends a photo. The sender gets «✅ Принято», the partner «👀 <name>: фото готово». When both photos are in, both messages also carry «🔓 Открыть сейчас» |
-| 18:00 | Whoever has no photo yet gets a reminder (with «🔥 На кону серия» if there is a streak) |
-| 21:00 | If both sent: album + evening card (theme, author, streak, milestones, reaction buttons) |
-| 21:00–23:59 | A late photo can still be sent; the exchange then happens immediately |
-| 00:00 | The day closes |
+> Правила проекта: сначала план, потом код; каждый этап начинается с обновления этого плана. Тестов нет — это перекрывает §15.7 ТЗ: поведение проверяется руками через отладочную панель и разовыми скриптами вне репозитория.
 
 ---
 
-## 2. Rules
+## 1. Решения (19.10.2026)
 
-### Pairs: one bot, many pairs
-- **Create a pair:** `/start` → «💞 Создать пару» → the bot replies with an invite link `t.me/<bot>?start=<code>`. Every pair has its own code.
-- **Join:** the partner opens the link and the pair is complete. A third person gets «В этой паре уже двое» and an offer to create their own pair. A person belongs to at most one pair.
-- **Everything is per pair:** schedule and time zone (`/settings`), theme history (used themes never repeat within the pair), streak, theme jar, reactions, history. Pairs never see each other.
-- **`/leave`** (with confirmation) dissolves the pair; the partner is notified; the history stays in the database but is no longer reachable; a new pair starts from scratch.
-- **The schedule runs only for complete pairs** (two members).
-- **Not in a pair:** only `/start`, `/help` and the pair buttons work; everything else gets «Ты пока не в паре…».
-- **`NEW_PAIRS=false`** closes registration of new pairs; existing pairs keep playing.
-- **Pair #1** is the couple that played before multi-pair support: migration 5 moved them there with their invite code, schedule and full history.
-- **Texts never use gendered verb forms** for participants, and names always stay in the nominative case (the bot cannot decline names).
-
-### Themes
-- 500 themes in two files, one per line, «Title — hint»:
-  - **simple, 350** — `themes/simple.txt`: can be shot within a minute wherever you are, no props, no special light, no searching;
-  - **creative, 150** — `themes/creative.txt`: needs some thought, searching or inventing (light, angles, mood, games).
-- **A simple theme is picked with probability 70%, a creative one with 30%.** Pool sizes follow the same ratio, so both run out at the same pace.
-- **A theme with at least one photo is used up for that pair** and never offered again (derived from the database, no explicit flag). Themes shown without photos (or rerolled away) may come back, but not within the last 30 shows; the least-shown themes go first.
-- If a pool is exhausted the other one is used; if everything is used, old themes repeat and a warning is logged (~1.5 years at one theme a day).
-- No seasonal themes and no geometry/composition themes. Titles are the theme keys, so they must be unique across both files.
-
-### Theme reroll
-- «🔄 Другая тема» under the morning message: anyone may press it while nobody has sent a photo, at most 3 times a day.
-- **The new theme is always a simple one.** Both get it, with a note who changed it.
-
-### Photo intake
-- Accepts compressed photos and image files; the exchange returns them in the same form.
-- One photo per person per day; a new photo before the exchange replaces the old one; the caption is kept and shown in the exchange.
-- From an album only one photo is taken (the bot says so).
-- The partner is notified only about the first photo of the day.
-- Before the theme: «Тема ещё не пришла…»; after the exchange: «Обмен за этот день уже был…»; text/stickers/video get a short hint.
-- **The day of a photo is taken from the message send time,** not processing time, so a photo sent at 23:58 during a restart still counts for its day.
-
-### Exchange: mutual only
-- At 21:00:
-  - **both sent:** each gets an album (each photo captioned with the author's name and caption) and the evening card;
-  - **one sent:** «<name> пока без фото…» to the sender, «<name>: фото готово и ждёт тебя — пришли своё до полуночи» to the other;
-  - **nobody sent:** «Сегодня обошлось без фото».
-- From 21:00 to 23:59 the exchange happens as soon as the second photo arrives.
-- At 00:00 the day closes; an unpaired photo is never shown to the partner, including in the history.
-- If one photo is a file and the other a compressed photo, the exchange goes as two separate messages (Telegram cannot mix them in one album).
-
-### Open early (both must agree)
-- When the second photo arrives, «Принято» and «фото готово» get the line «Оба фото на месте 📸 … или раньше, если вы оба нажмёте «Открыть сейчас»» and the button.
-- First press: answer «Ждём, пока <name> тоже нажмёт», the partner gets «🔓 <name> хочет открыть фото сейчас» with the button. Repeated presses change nothing.
-- **Both pressed:** album + card immediately. The evening then counts as done (nothing at 21:00, no reminder); the streak counts as usual.
-- Otherwise the exchange happens at 21:00. `/today` shows who already wants to open and offers the button.
-- Early open sets `revealed_at` first and then exchanges, so "exchanged ⇒ revealed" holds everywhere.
-
-### Reminder
-- Three hours before the exchange (18:00 by default), only to those without a photo; skipped if it would fall before the theme time.
-
-### Evening card, reactions and replies
-- **After the album comes one card:** theme, date, author (if the theme came from the jar), streak, milestones (7/30/100/365 days) and «🏆 Новый рекорд серии!», plus reaction buttons ❤️ 🔥 😂 😮 👏.
-- **Reactions:** the partner gets «<name> ставит 🔥 твоему фото «Тема»»; the choice can be changed; the chosen one is marked on the button.
-- **Buttons, not native reactions:** Telegram does not send `message_reaction` updates to a bot in a private chat (the bot would have to be a chat administrator). Verified in the docs and confirmed by third-party tests.
-- **Replies:** a text reply to the partner's photo, one's own photo or the card is forwarded: «💬 <name> о твоём фото «Тема»: …». The bot maps sent messages to photos in `sent_messages`; replies to anything else are not forwarded and are not stored.
-- The card is re-delivered after a restart together with the album; future features add lines/buttons to it via `Feature.card`.
-
-### Partner themes (`/addtheme`)
-- `/addtheme Окно — вид из любого окна` or just `/addtheme` (the bot asks). The hint is optional; the title is 2–50 characters.
-- The theme goes into the pair's jar; the partner does not see it in advance; the author sees how many of their themes are waiting; a «🗑 Удалить» button works until the theme is shown.
-- **A jar theme is picked at most every other day,** alternating authors, oldest first; on other days the usual 70/30 pick applies.
-- The theme message, `/today`, the card and the history show «✍️ Тему предлагает <name>».
-- If a jar theme is rerolled, it goes back to the jar.
-
-### History and streak
-- `/history`: days as buttons, 10 per page, «15.10 · Отражения · ✅» (✅ exchange, 🌓 only one photo, ▫️ no photos). A day with an exchange is shown as photos + the card (reactions visible, can react to old photos); the mutual rule applies here too.
-- **Streak** = consecutive days with an exchange; today does not break it until it ends; days the bot slept through (`skipped`) do not break it either.
-- Shown in the morning theme, the reminder («На кону серия»), the card (milestones, record — only when a previous best is beaten, never on the first streak), `/today` and `/history` (with the record).
-
-### Settings (`/settings`)
-- Theme time, exchange time and the pair's time zone (common zones as buttons, any IANA name as text). Either partner can change them; both are notified.
-- Theme time must be earlier than exchange time. A change applies immediately; if the new time has already passed today, the event happens within a minute (the bot warns). A theme already sent today is not sent again.
-
----
-
-## 3. Commands
-
-| Command | What it does |
-|---|---|
-| `/start` | create a pair / join by link; in a pair — short help |
-| `/today` | today's theme, who has a photo, time to exchange, streak, early-open button |
-| `/history` | history, streak and record |
-| `/addtheme` | add a theme to the jar |
-| `/settings` | schedule and time zone |
-| `/leave` | leave the pair (with confirmation) |
-| `/help` | rules in short |
-| `/dev` | service buttons for manual checks (theme now · reminder now · exchange now · reset today · clear history). Only with `DEBUG=true` |
-
----
-
-## 4. Technical
-
-### Stack
-- **Python 3.12 + aiogram 3** in polling mode (no web server, no domain).
-- **SQLite (aiosqlite) on a Railway Volume.** A separate Postgres is not needed: it would also live on a volume, costs a separate service and does not help against deploy-time losses.
-- **pydantic-settings + python-dotenv** for config, **loguru** for logs, **tzdata** for time zones in the slim image.
-- Photo files are never stored: Telegram keeps them, the database stores `file_id` only.
-
-### Structure
-```
-Photochki_bot/
-├── PLAN.md · CLAUDE.md · README.md
-├── requirements.txt · Dockerfile · .dockerignore · .env.example · .gitignore
-├── themes/                 simple.txt — 350 simple themes, creative.txt — 150 creative
-└── bot/
-    ├── __main__.py         startup: config → db → Core → features → scheduler → polling
-    ├── config.py           environment variables
-    ├── app.py              Core (shared context) and App (one pair's context)
-    ├── feature.py          Feature: router, scheduler jobs, menu commands, card part, hooks
-    ├── db.py               SQLite connection, migrations, volume check
-    ├── repo.py             all SQL: Registry (pairs and members) and Repo (one pair)
-    ├── themes.py           theme sources: two pools from themes/, 70/30 pick
-    ├── daily.py            day logic: theme, reroll, photos, reminder, exchange, card, streak
-    ├── scheduler.py        every 30 s: all jobs for every complete pair
-    ├── access.py           middleware: finds the sender's pair, injects app and user
-    ├── ui.py               small shared UI helpers
-    ├── texts.py            all bot texts (Russian)
-    └── features/
-        ├── __init__.py     feature registry; its order = router order
-        ├── daily_theme.py  morning theme, «Другая тема», /today
-        ├── photos.py       photo intake
-        ├── early_open.py   «Открыть сейчас» (both must agree)
-        ├── partner_themes.py  /addtheme
-        ├── reactions.py    card reactions and reply forwarding
-        ├── reminder.py     reminder
-        ├── exchange.py     evening exchange, closing days the bot slept through
-        ├── history.py      /history
-        ├── settings.py     /settings
-        ├── onboarding.py   /start, pair creation, joining by link, /leave, /help
-        ├── dev.py          /dev (only with DEBUG=true)
-        └── fallback.py     answers everything else (always last)
-```
-The mutual rule lives in exactly one place, `daily.visible_photos()`; the exchange, late photos, the history and `/dev` all use it.
-
-### Pairs inside the code
-- `Core` — shared context: bot, connection, `Registry`, config, themes, features, clock (`core.clock`, replaceable in checks).
-- `App` — one pair's context with the same interface the day logic and features use (`app.repo`, `app.today()`, `app.invite_link`, …): `Repo(conn, pair_id)` scopes every query to the pair, time is in the pair's zone (pair setting `timezone`, default `TIMEZONE`).
-- `access.py` resolves the sender's pair and injects `app`/`user`; the scheduler builds an `App` for every complete pair on each tick. Any new query on pair data must filter by `pair_id`.
-
-### Extensibility
-- **A feature is a module in `bot/features/` with a `Feature` object** (router, jobs, menu commands, card part, hooks), enabled by one line in the registry.
-- **Scheduler jobs are plain async functions `job(app, now)`** that decide themselves whether it is time and claim the event in the database.
-- **Evening card:** the core builds the header (theme, date, author, streak), features add lines and a button row via `Feature.card`.
-- **`on_exchange` hook** for side effects after an exchange (e.g. a collage); called once and may be missed if the bot crashes mid-exchange — put important things into the card instead.
-- **Theme sources** share one interface: a list now; an AI source with the list as fallback is possible later.
-- **Schema changes only through new migrations** appended to `MIGRATIONS` in `bot/db.py`; pair settings are key-value and need no migration.
-
-### Database
-```
-pairs          id PK · invite_code UNIQUE · created_at · closed_at
-pair_settings  PK (pair_id, key) · value         theme_time, reveal_time, timezone
-users          user_id PK · name · joined_at · pair_id (NULL — not in a pair)
-days           PK (pair_id, date) · theme_title · theme_hint · theme_author
-               · theme_sent_at · reminder_sent_at · revealed_at · exchanged_at · skipped
-theme_log      id · pair_id · date · title · shown_at       every shown theme, rerolled ones too
-submissions    PK (date, user_id) · pair_id · file_id · kind (photo | document) · caption
-               · media_group_id · sent_at
-deliveries     PK (date, user_id, kind) · pair_id · delivered_at   who really got theme / album / card
-custom_themes  id · pair_id · author_id · title · hint · created_at · shown_on   /addtheme jar
-reactions      PK (date, user_id) · pair_id · emoji · at
-early_open     PK (date, user_id) · pair_id · at              who agreed to open early
-sent_messages  PK (chat_id, message_id) · pair_id · date · owner_id   whose photo is in which message
-settings       key PK · value                               legacy global settings (unused)
-```
-- `revealed_at` — the evening event happened; `exchanged_at` — both got each other's photos (may be after 21:00); `skipped` — the bot slept through the theme time until the exchange time.
-- **Events are claimed before they are sent:** atomic `UPDATE … WHERE <mark> IS NULL`, only the first caller gets True. The connection runs in autocommit (`isolation_level=None`).
-- A person is in one pair at a time, so the old `(date, user_id)` keys stay unique.
-
-### Scheduler
-A loop every 30 seconds (not cron) checks the clock of every complete pair against the database: theme due and not sent → pick and send; reminder due → remind those without a photo; exchange due → exchange. State lives in the database, so after a restart nothing is lost or duplicated:
-- the bot was down at exchange time and came back after midnight → yesterday's exchange is done at start;
-- the bot slept through the morning until the exchange time → the day is skipped so that theme and exchange do not arrive together;
-- pending updates are not dropped at start, so photos sent during a deploy are processed.
-
-### Reliability on deploy
-Deploys are allowed any time, including during the day when a photo was already sent; no photo may be lost.
-- **No volume on Railway → the bot refuses to start** (`RAILWAY_ENVIRONMENT_ID` set and the database not under `RAILWAY_VOLUME_MOUNT_PATH`).
-- **Updates are processed one by one** (`handle_as_tasks=False`): Telegram confirms an update only after it was handled; an interrupted update is redelivered and a repeated photo is recognised (`SaveResult` «same», no second notification).
-- **`deliveries` records who really got the theme, the album and the card;** `daily.redeliver` (a core scheduler job) re-sends to the rest for events older than a minute (theme until the evening, exchange for two days).
-- **If saving a photo fails, the bot asks to resend it** instead of staying silent.
-- **The startup log shows the database path, the number of pairs and members.**
-- In production logs, tracebacks do not include variable values (`diagnose` only with `DEBUG`).
-
----
-
-## 5. Railway
-- Repository `MrBoomer1981/OurSpark` (public, no secrets in code); every push to `main` deploys.
-- Built from `Dockerfile` (python:3.12-slim), detected automatically. Restart on failure — Railway default (up to 10). No healthcheck, no public domain.
-- **No Railway config file on purpose:** `railway.toml` (Config as Code) is deprecated (read until 2026-12-01) and only repeated the defaults; Infrastructure as Code (`.railway/railway.ts`) would add an npm package, `railway config apply` instead of push and a risk of deleting the volume if it is not declared.
-- Volume `ourspark-volume` mounted at `/app/data` (holds `bot.db`). With a volume Railway never runs two copies at once, so polling never conflicts.
-- Region: currently `asia-southeast1` (Singapore); a European region would be closer to Telegram's servers (planned move).
-
-| Variable | Default | Meaning |
+| Вопрос | Решение | Почему |
 |---|---|---|
-| `BOT_TOKEN` | — | token from @BotFather |
-| `TIMEZONE` | `Europe/Moscow` | time zone of new pairs; each pair can change its own |
-| `NEW_PAIRS` | `true` | `false` closes registration of new pairs |
-| `DEBUG` | `false` | `true` enables `/dev` and verbose logs |
-| `DB_PATH` | `data/bot.db` | SQLite path (`/app/data/bot.db` on Railway) |
-
-A local run needs a separate test bot: one token cannot be polled from two places.
-
----
-
-## 6. Milestones
-1. **v1** — one pair: themes, photos, mutual exchange, reminder, history and streak, settings, `/dev`. Done.
-2. **Themes 70/30** — 500 themes, used themes never repeat, reroll gives a simple theme. Done.
-3. **Reliability on deploy** — volume check, one-by-one updates, deliveries and re-delivery. Done.
-4. **Evening card, reactions and replies, `/addtheme`, streak milestones and record.** Done.
-5. **Open early when both agree.** Done.
-6. **Many pairs** — pairs, per-pair time zone, `/leave`, `NEW_PAIRS`, migration 5; code cleanup; README for users and self-hosters. Current.
-7. **Move to a European Railway region** — after a database backup, in a quiet hour. Next.
+| Сервисы | По ролям: `web`, `api`, `bot` и Postgres. Игра живёт внутри `api` модулями с жёсткими границами | Раскрытие результата (награды, шкалы, летопись) должно пройти одной транзакцией; сервисы по предметным областям потребовали бы саг |
+| База | Railway PostgreSQL | Том Railway подключается только к одному сервису, а сервис с томом ненадолго выключается при каждом деплое. Postgres доступен любому сервису, и `api` деплоится без простоя |
+| Доставка | Mini App и PWA из одной сборки; без магазинов и нативных сборок | Mini App не нужно устанавливать; PWA — иконка на экране iOS и Android без магазинов и аккаунтов разработчика |
+| Вход вне Telegram | Через бота: «Войти через Telegram» → бот подтверждает → PWA хранит сессию | Один аккаунт и одна пара в обоих режимах |
+| Фото-обмен | Остаётся в проде как есть; решаем на этапе 6 | В ТЗ его нет |
+| Тесты | Нет (правило проекта) | Повторные награды отсекают уникальные ключи в базе, остальное проверяется руками |
+| Домен | Адрес Railway `<имя>.up.railway.app` | Бесплатно и сразу. PWA и push-подписки привязаны к адресу: при переезде на свой домен приложение придётся переустановить |
+| Репозиторий | Публичный; ТЗ и код игры коммитим | Как у фото-бота: секретов в коде нет |
+| Настройка Railway | Сервисы заводит Claude через Railway CLI и Railway API | Значения токенов автор проекта вставляет сам в панели Railway |
 
 ---
 
-## 7. Manual check (instead of tests)
-Ad-hoc verification scripts stay outside the repository. In Telegram, ideally with two people:
-- [ ] `/start` → «Создать пару» → link; the partner joins; a third person cannot join; a broken link is rejected
-- [ ] the theme arrives for both; «Другая тема» works until the first photo, at most 3 times
-- [ ] compressed photo and file; replacement, caption, album
-- [ ] exchange: both / one / nobody; a late photo before midnight; «Открыть сейчас» only when both press
-- [ ] the card: reactions, replies to photos and to the card
-- [ ] `/addtheme`, deleting a jar theme, a jar theme with the author line
-- [ ] a second pair with another time zone gets its theme at its own time; `/leave`
-- [ ] a redeploy in the middle of the day: nothing lost or duplicated
+## 2. Продукт
+
+### Принципы (ТЗ §2)
+- Пара растит одного общего питомца. Каждый день приходит одно «Послание дня» — вопрос; ответы и выборы понемногу меняют внешность, характер и историю питомца. 2–5 минут в день.
+- **Никакой обязаловки.** Пропуск дней ничего не стоит: ни голода, ни болезней, ни угасания, ни штрафов, ни чувства вины. Ни серий, ни наград за серии.
+- Партнёрам не нужно быть в сети одновременно. На свой ответ питомец реагирует сразу; общий результат открывается, только когда ответили оба.
+- Игра не оценивает отношения и не делает психологических выводов; шкалы описывают только питомца.
+- Ответы приватны: до отправки экран говорит, что увидит партнёр.
+- Только заранее подготовленный контент: никакой генерации ИИ внутри продукта.
+- Награды — за участие, а не за глубину откровенности, совпадение ответов или серии.
+
+### Пара
+- Один создаёт пару и получает ссылку-приглашение `t.me/<бот>?startapp=<код>`. Партнёр открывает её, Mini App запускается с кодом в `start_param` и присоединяет к паре. Приглашения всегда идут через эту ссылку Telegram; PWA делится той же ссылкой.
+- Правила из фото-бота: ровно два участника; человек состоит максимум в одной паре; лимит при входе проверяется атомарно; выход распускает пару (данные остаются в базе, но недоступны).
+- Понятные состояния: приглашение недействительно или пара закрыта; человек уже в другой паре; пара заполнена; партнёр ещё не присоединился.
+- Питомец и летопись появляются, когда пара собрана.
+
+### Послание дня
+- Один вопрос на пару в день (по часовому поясу пары). Он назначается, когда кто-то из пары открывает Гнездо, — без планировщика.
+- Типы и доли: лёгкие 35%, о близости 30%, «Угадай партнёра» 20%, совместный выбор 15% — взвешенный выбор, как 70/30 у фото-тем. Вопрос, который пара завершила, больше не выпадает.
+- «Другой вопрос» — пока никто не ответил, ограниченное число раз в день.
+- Формы ответа: свободный текст, вариант или — для «Угадай партнёра» — свой ответ плюс прогноз ответа партнёра. Прогноз сохраняется до того, как показан ответ партнёра.
+- Вопрос не сгорает в полночь: он ждёт, пока ответят оба. Следующий назначается не раньше следующего дня после того, как ответили оба, — так ничей ответ не пропадает.
+- Лимит смены по умолчанию — 3 в день, как у «Другой темы»; уточним на этапе 4.
+
+### Состояния сессии (ТЗ §8)
+
+| Состояние | Что значит |
+|---|---|
+| `ASSIGNED` | Вопрос назначен, ответов нет |
+| `WAITING_FOR_PARTNER` | Свой ответ есть, ответа партнёра нет |
+| `READY_TO_REVEAL` | Ответили оба; результат можно открыть |
+| `COMPLETED` | Результат открыт: общие награды, изменения шкал и запись в летописи применены |
+
+- Состояние выводится из данных (ответы и `completed_at`), а не хранится отдельным полем.
+- `READY_TO_REVEAL → COMPLETED` происходит при первом «Открыть результат» от любого из партнёров, через бронь; повторные и параллельные запросы ничего не меняют. Раскрытие проигрывается каждому партнёру один раз, при первом просмотре (`result_seen_at`).
+
+### Питомец и развитие (ТЗ §4)
+- **Внешность:** три стадии Найдёныш → Любопытный спутник → Хранитель гнезда; косметика (перья, подвески, мини-плащ, маска, украшения гнезда); несколько выражений и анимаций.
+- **Характер:** четыре шкалы — Любопытство, Озорство, Нежность, Смелость. Определённые выборы сдвигают шкалу; пороги открывают реакции, привычки и варианты косметики; шкалы никогда не убывают.
+- **История:** летопись записывает только заранее определённые совместные события («Вы оба выбрали цветок. Поэтому я храню его рядом с кроватью»).
+- **Поведение:** короткая реплика в Гнезде; реакция на свой ответ; совместная реакция после раскрытия; реакция на предмет или рост. Без ИИ-поведения.
+- **Темп:** первое заметное изменение — в первую неделю; первый крупный этап — примерно через 3–4 недели умеренной игры.
+
+### Награды (ТЗ §5)
+- **Искры** — общий кошелёк пары: копят и тратят оба. Стартовые значения, потом балансируем: +5 за каждый ответ и ещё +10 при раскрытии результата (по ТЗ — «ещё 5 каждому»).
+- **Рост не покупается.** Стадия открывается сама, когда пара заработала нужное число искр за всё время; тратятся искры только на косметику, поэтому покупки не тормозят рост. Это отличие от ТЗ §5, где стадии открывают за искры.
+- **Реликвии** — за три завершённых вопроса одной темы, в любом порядке и с любыми перерывами: пропуски серию не рвут. Не тратятся.
+- **Страницы летописи** — записи летописи; не валюта и не теряются.
+- Награды выдаёт только сервер и ровно один раз на событие — по уникальному ключу события в журнале наград.
+
+### Уведомления
+- События: партнёр присоединился; партнёр ответил (твоя очередь); результат готов. Утреннего напоминания нет — игра не должна становиться обязанностью.
+- Канал: web push, если PWA установлено и уведомления разрешены; иначе сообщение бота в Telegram. Боту можно писать, только если человек запускал бота или разрешил это через `requestWriteAccess`.
+- Если не работает ни то, ни другое, Гнездо говорит, что уведомления выключены, и предлагает их включить.
+
+### Экраны (ТЗ §6)
+1. **Гнездо** — питомец в центре, стадия и прогресс, реплика питомца, заметная кнопка «Послание дня», статус (нужно ответить / ждём партнёра / результат готов), входы в «Питомца» и «Летопись». Внутри Telegram ещё предлагает «Добавить на экран» (`addToHomeScreen`).
+2. **Послание** — карточка, ввод по типу вопроса, строка о том, что увидит партнёр, «Отправить» и «Другой вопрос», когда можно.
+3. **Результат** — ответ партнёра, сравнение (для «Угадай партнёра»), общий итог (для совместного выбора), реакция питомца, награды и понятный следующий шаг.
+4. **Питомец** — внешность, стадии, шкалы простыми словами, открытые реакции и косметика, примерка.
+5. **Летопись и коллекция** — записи, реликвии и косметика. Без публичных профилей и рейтингов.
+
+Главный путь ведёт к Посланию дня; остальные экраны вторичны, это не пять равнозначных вкладок.
+
+### Тексты
+- Тексты на русском. Тексты интерфейса — только в `services/web/src/texts.ts`, тексты уведомлений — только в модуле текстов `api`, карточки вопросов и реплики питомца — только в `services/api/content/`.
+- Правила те же, что у фото-бота: никаких родовых форм глаголов для участников, имена — всегда в именительном падеже. Это касается и карточек вопросов: «что я выбрал(а) бы» из ТЗ надо переформулировать.
 
 ---
 
-## 8. Not in scope yet / ideas
-- Collage of the day; AI-generated themes; weekly recap album; achievements
-- Video and video notes
-- A Mini App gallery; archive export
-- Photo backups to disk
+## 3. Архитектура
+
+### Сервисы
+
+```
+Telegram ── /start, /start login_… ──▶ bot ── подтверждение входа ──┐
+   │                                                                ▼
+   └── открывает Mini App ──▶ web ──── /api (тот же домен) ───────▶ api ──▶ Postgres
+PWA на экране телефона ──────┘                                      │
+                                                                    ├──▶ сообщения в Telegram
+                                                                    └──▶ web push
+```
+
+| Сервис | Роль | Стек | Публичный |
+|---|---|---|---|
+| `web` | Mini App и PWA: экраны, ассеты, манифест, service worker. Caddy отдаёт статику и проксирует `/api` в `api` по приватной сети Railway | React, TypeScript, Vite, tma.js, vite-plugin-pwa; Caddy | Да — адрес Mini App |
+| `api` | Вся игра; вход (initData и сессии); рассылка из outbox — сообщения в Telegram и web push | Python 3.12, FastAPI, asyncpg, aiogram (клиент Bot API и проверка initData), pywebpush | Нет |
+| `bot` | Вход: `/start` с кнопкой «Открыть гнездо», кнопка меню, подтверждение входа в PWA | Python 3.12, aiogram 3, polling | Нет |
+| Postgres | Все данные игры | Railway PostgreSQL | Нет |
+| Фото-бот | Текущий продукт: `bot/`, `themes/`, корневой `Dockerfile`, свой том с SQLite | Без изменений | Нет |
+
+**Почему по ролям, а не по предметным областям.** Главный шаг игры — оба ответили → раскрытие → искры → изменения шкал → запись в летописи — должен пройти целиком и ровно один раз (ТЗ §8, критерий 7). В одной базе это одна транзакция с бронью. Если разнести шаги по сервисам, понадобится сага с откатом на каждом шаге, а расхождения придётся ловить руками. Поэтому области живут внутри `api` модулями с жёсткими границами, и любую из них можно потом выделить в сервис. Первые кандидаты — уведомления и метрики.
+
+### Модули внутри `api`
+
+```
+services/api/
+├── app/
+│   ├── game/       правила игры обычными функциями, без SQL и HTTP:
+│   │               pairs · prompts · pet · rewards · chronicle · reveal
+│   ├── store/      весь SQL (asyncpg), по модулю на область; миграции
+│   ├── http/       маршруты FastAPI, модели запросов и ответов, проверка входа
+│   ├── telegram/   проверка initData, клиент Bot API
+│   ├── notify/     рассылка из outbox: сообщения в Telegram и web push
+│   ├── content/    загрузка и проверка файлов контента
+│   ├── texts.py    тексты уведомлений
+│   └── main.py
+├── content/        prompts.yaml · pet.yaml (стадии, шкалы, предметы, цены) · lines.yaml (реплики питомца)
+└── Dockerfile · requirements.txt
+```
+- Область владеет своими таблицами; другие области вызывают её функции, но не её SQL.
+- `game/reveal.py` — единственное место, которое затрагивает несколько областей, и оно работает в одной транзакции.
+
+### `web`
+
+```
+services/web/
+├── src/
+│   ├── api/         типизированный клиент; типы генерируются из OpenAPI-схемы api
+│   ├── platform/    режим Telegram (initData, тема, кнопка «назад», addToHomeScreen, requestWriteAccess)
+│   │                и режим PWA (сессия, подписка на push, подсказки по установке)
+│   ├── screens/     экраны: Nest · Message · Result · Pet · Chronicle
+│   ├── pet/         PetView: рисует питомца по манифесту ассетов (стадия, выражение, надетые предметы)
+│   ├── ui/          пиксель-готические компоненты
+│   ├── assets.ts    манифест ассетов: логические имена → файлы, размеры и число кадров
+│   └── texts.ts     все тексты интерфейса
+├── public/assets/   заглушки; позже их заменит финальная графика
+└── Caddyfile · Dockerfile
+```
+- Основа — официальный React-шаблон Telegram Mini Apps (MIT); TON Connect из него убираем.
+- Режим определяется при запуске: есть initData — режим Telegram, нет — режим PWA.
+- Код обращается к ассетам только по логическому имени; размеры, число кадров и пути живут в манифесте (ТЗ §10).
+
+### Вход
+- **Внутри Telegram:** каждый запрос несёт `Authorization: tma <initData>`. `api` проверяет подпись токеном бота (`safe_parse_webapp_init_data` из aiogram) и свежесть `auth_date`.
+- **В PWA:**
+  1. «Войти через Telegram» → `api` создаёт одноразовый случайный nonce, который живёт 10 минут.
+  2. PWA открывает `t.me/<бот>?start=login_<nonce>`.
+  3. `bot` просит подтвердить вход («Войти в Гнездо на этом устройстве?») и только потом подтверждает nonce в `api` по приватной сети. Без этого вопроса чужая ссылка `login_…` молча открыла бы аккаунт на устройстве того, кто её прислал.
+  4. Вернувшись в PWA, приложение меняет nonce на долгоживущий токен сессии и отправляет его как `Authorization: Bearer <токен>`. Кук нет, значит, нет и CSRF; в базе хранится только хеш токена; сессии можно отозвать.
+- Кто делает запрос, определяет только проверка на сервере, а пара берётся по этому человеку — никогда со слов клиента.
+
+### Связи между сервисами
+- **`web` → `api`:** тот же домен через Caddy, поэтому CORS не нужен; `api` наружу не открыт. В приватной сети `api` слушает `::`.
+- **`api` → пользователи: outbox.** Событие и уведомление о нём пишутся одной транзакцией. Фоновый цикл в `api` бронирует созревшие записи, отправляет их (push или Telegram) и помечает отправленными; при ошибке повторяет с паузой. Ответ 403 от Telegram или протухшая push-подписка выключают этот канал. Две копии `api` во время деплоя друг другу не мешают — спасает бронь. Брокер сообщений не нужен.
+- **`bot` → `api`:** только подтверждение входа, по приватной сети и с общим секретом.
+
+### Модель данных (черновик; колонки уточняются на каждом этапе)
+
+```
+users            user_id PK (Telegram id) · name · pair_id · created_at · tg_reachable
+pairs            id PK · invite_code UNIQUE · created_at · completed_at · closed_at
+pair_settings    PK (pair_id, key) · value                         timezone, …
+sessions         token_hash PK · user_id · created_at · last_seen_at · revoked_at
+login_nonces     nonce PK · created_at · confirmed_user_id · confirmed_at · used_at
+push_subs        endpoint PK · user_id · keys · created_at · failed_at
+pets             pair_id PK · stage · curiosity · mischief · tenderness · courage · equipped · created_at
+prompt_sessions  id PK · pair_id · day · prompt_key · assigned_at · completed_at · UNIQUE (pair_id, day)
+prompt_log       pair_id · day · prompt_key · shown_at              все показанные вопросы, в том числе сменённые
+answers          PK (session_id, user_id) · answer · prediction · created_at · result_seen_at
+reward_ledger    id · pair_id · user_id · event_key UNIQUE · sparks (±) · item_key · created_at
+unlocks          PK (pair_id, item_key) · event_key · unlocked_at   стадии, косметика, реликвии
+chronicle        id · pair_id · event_key UNIQUE · kind · data · created_at
+outbox           id · user_id · kind · payload · dedup_key UNIQUE · created_at · claimed_at · sent_at · attempts · error
+events           id · pair_id · user_id · kind · data · at          метрики для ТЗ §13
+```
+- Баланс искр — сумма по журналу. Трата — отрицательная запись со своим ключом (`unlock:<предмет>`), поэтому двойное нажатие не спишет искры дважды.
+- Прогресс роста — сумма только заработанных искр, без трат. Новая стадия записывается в `unlocks` с ключом `stage:<номер>`, поэтому рост тоже случается ровно один раз.
+- Ключи контента (`prompt_key`, `item_key`) — постоянные id из файлов контента; после первого использования они не меняются.
+- `users.pair_id` держит правило «один человек — одна пара», как в фото-боте.
+
+### Инварианты
+- **Решает сервер.** Клиент присылает намерения (ответить, сменить вопрос, открыть результат, открыть предмет, надеть) — никогда не суммы, шкалы или состояния.
+- **Ровно один раз.** У каждой награды, изменения шкалы, открытия предмета, записи летописи и уведомления есть уникальный ключ; запись — `INSERT … ON CONFLICT DO NOTHING` или бронь `UPDATE … WHERE … IS NULL`.
+- **Раскрытие — единственная транзакция на несколько областей** (`game/reveal.py`).
+- **Правило взаимности живёт в одной функции:** `api` не отдаёт ответ или прогноз партнёра, пока не ответили оба, — а не просто прячет его в интерфейсе.
+- **Каждый запрос к данным пары фильтрует по `pair_id`**, взятому у вошедшего человека.
+- **День — это дата в часовом поясе пары;** часы подменяемые (кнопка «следующий день» в отладочной панели).
+- **Схема меняется только добавлением миграций;** применённые миграции не редактируются.
+- **Важные отправки идут через outbox.**
+- **Ассеты — только по логическому имени** через манифест.
+
+### Отладочная панель (вместо `/dev`)
+- Есть, только когда `api` запущен с `DEBUG=true`. Иначе `api` отклоняет отладочные запросы, а `web` не показывает панель.
+- Действия: сыграть за партнёра, следующий день, сбросить сегодняшний день, начислить искры, сбросить прогресс пары.
+- С `DEBUG` `api` ещё принимает подставного пользователя, чтобы делать интерфейс в браузере на компьютере без Telegram.
+
+---
+
+## 4. Репозиторий и деплой
+
+```
+OurSpark/
+├── PLAN.md · CLAUDE.md · README.md · docker-compose.yml   docker-compose: локальный Postgres
+├── voronye_gnezdo_mvp_spec.md                              ТЗ
+├── docs/photo-bot.md                                       спецификация фото-бота
+├── bot/ · themes/ · Dockerfile · requirements.txt          фото-бот (до этапа 6)
+└── services/
+    ├── api/
+    ├── bot/
+    └── web/
+```
+
+### Railway
+- Один проект, в нём сервисы: фото-бот (как сейчас, со своим томом), `api`, `web`, `bot` и Postgres. Новые сервисы — в европейском регионе, ближе к Telegram и к пользователям.
+- У каждого нового сервиса Root Directory `services/<имя>` и Watch Paths `/services/<имя>/**`. Фото-боту ставим Watch Paths на его файлы (`bot/`, `themes/`, `Dockerfile`, `requirements.txt`), чтобы пуши в новые сервисы его не передеплоивали. Корневой `.dockerignore` исключает `services/` и `docs/` из образа фото-бота.
+- Публичный домен есть только у `web`: адрес Railway вида `<имя>.up.railway.app`, он же адрес Mini App в BotFather. У `api` есть healthcheck, поэтому его деплой проходит без простоя.
+- Сервисы, домен, Root Directory, Watch Paths и переменные заводит Claude через Railway CLI и Railway API. Значения токенов автор проекта вставляет сам в панели Railway, в чат они не попадают.
+- Конфигов Railway в репозитории нет, по тем же причинам, что у фото-бота: настройки живут в панели Railway и записаны здесь.
+- Для Postgres включены регулярные бэкапы.
+- До этапа 6 новые сервисы работают с отдельным тестовым ботом, и там можно `DEBUG=true`. Перед тем как придут настоящие пары, `DEBUG=false`.
+- У `bot` нет тома, поэтому при деплое несколько секунд Telegram опрашивают две копии (`Conflict` в логах). Обработчики `bot` идемпотентны, так что это безвредно.
+
+### Переменные
+
+| Сервис | Переменная | Что это |
+|---|---|---|
+| `api` | `BOT_TOKEN` | Токен бота, в котором живёт Mini App: проверка initData и сообщения |
+| `api` | `DATABASE_URL` | Ссылка на Railway Postgres |
+| `api` | `INTERNAL_SECRET` | Общий секрет для запросов `bot` → `api` |
+| `api` | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web push; публичный ключ браузер получает от `api` |
+| `api` | `TIMEZONE`, `NEW_PAIRS`, `DEBUG` | Как у фото-бота |
+| `bot` | `BOT_TOKEN`, `WEB_APP_URL`, `API_URL`, `INTERNAL_SECRET` | Бот-вход |
+| `web` | `API_UPSTREAM` | Куда Caddy проксирует `/api`: `api.railway.internal:<порт>` |
+
+### Локальная разработка
+- `docker compose up` поднимает Postgres; `api` запускается с автоперезагрузкой; `web` — на dev-сервере Vite, который проксирует `/api`.
+- Интерфейс делается в браузере на компьютере с `DEBUG` и подставным пользователем.
+- Проверки внутри Telegram — на Railway с тестовым ботом после пуша. Пушим только по явной команде автора проекта.
+
+---
+
+## 5. Этапы (порядок из ТЗ §14)
+
+0. **Монорепо.** Пользователи ничего не замечают.
+   - Этот план и `CLAUDE.md`; заготовки `services/api`, `services/web`, `services/bot`; `docker-compose.yml`; корневой `.dockerignore`.
+   - Railway: Postgres и три новых сервиса; Watch Paths для фото-бота; тестовый бот в BotFather с адресом Mini App.
+   - Готово, когда фото-бот работает как раньше, тестовый бот открывает пустую Mini App, а `api` отвечает на `/health`.
+1. **Каркас игры (ТЗ §14.1).**
+   - Вход в обоих режимах: initData в Telegram, вход через бота в PWA. Манифест PWA, service worker, подсказки по установке; «Добавить на экран» в Mini App.
+   - Создание пары, вход по `startapp`, состояния ошибок; у собранной пары появляется питомец.
+   - Outbox и первое уведомление («партнёр присоединился») через Telegram.
+   - Отладочная панель.
+   - Готово, когда выполнены критерии 1 и 11 и часть критерия 13 — чужая пара недоступна.
+2. **Вертикальный срез (ТЗ §14.2).**
+   - Один тип вопроса от начала до конца: вопрос дня → ответ → реакция питомца-заглушки → уведомление партнёру → второй ответ → раскрытие → искры ровно один раз → сдвиг шкалы.
+   - Канал web push.
+   - Готово, когда выполнены критерии 2–7.
+3. **Прогрессия (ТЗ §14.3).** Четыре шкалы с порогами, три стадии, косметика за искры и её примерка, реликвии за серию из трёх, летопись; экраны «Питомец» и «Летопись». Готово, когда выполнены критерии 8–10.
+4. **Контент (ТЗ §14.4).** 60–80 карточек в долях 35/30/20/15 — черновики пишет Claude, правит автор проекта; «Угадай партнёра» с прогнозом, который сохраняется первым; «Другой вопрос»; баланс наград.
+5. **Полировка и закрытый тест (ТЗ §14.5).**
+   - Пиксель-готическая тема на заглушках; `docs/assets.md` — где менять спрайты, шрифты и звуки.
+   - Метрики из ТЗ §13 — SQL-запросы к `events`; состояния ошибок.
+   - Закрытый тест на паре №1.
+   - Готово, когда выполнены критерий 12 и остальное из ТЗ §12.
+6. **Переход.**
+   - Решаем судьбу фото-обмена: заменить, встроить в игру или оставить оба продукта.
+   - Переносим пары из SQLite фото-бота в Postgres, чтобы никому не пришлось собираться заново.
+   - Решаем, в каком Telegram-боте живёт игра; переключаем прод; выключаем лишнее; переписываем `README.md`.
+
+---
+
+## 6. Ручные проверки (вместо тестов)
+Разовые скрипты лежат вне репозитория.
+- [ ] Mini App: новый человек создаёт пару, партнёр входит по ссылке; третьему отказано; про сломанное или закрытое приглашение сказано понятно; тому, кто уже в другой паре, отказано.
+- [ ] PWA: установка на iPhone (Safari → «На экран Домой») и на Android; вход через бота; та же пара и тот же питомец, что в Mini App; push-уведомления приходят.
+- [ ] Данные чужой пары недоступны: запросы с чужими id ничего не возвращают.
+- [ ] Ответа партнёра нет ни в одном ответе `api`, пока не ответили оба (смотреть JSON, а не экран).
+- [ ] Двойные нажатия и параллельные запросы (скрипт): один ответ, одна награда, одно изменение шкалы, одна запись летописи, одно уведомление.
+- [ ] Закрыть и снова открыть приложение — всё на месте; деплой `api` посреди сессии ничего не ломает.
+- [ ] После пропущенных дней никаких штрафов («следующий день» в отладочной панели несколько раз подряд).
+
+---
+
+## 7. Что берём готовым
+
+Открытого проекта, достаточно близкого, чтобы взять его за основу, нет; открытого набора вопросов для пар на русском тоже (проверено 19.10.2026). Готовые куски:
+
+| Источник | Для чего | Лицензия |
+|---|---|---|
+| [Telegram-Mini-Apps/reactjs-template](https://github.com/Telegram-Mini-Apps/reactjs-template), [tma.js](https://github.com/Telegram-Mini-Apps/tma.js) | Каркас `web` и связка с Telegram | MIT |
+| [aiogram](https://github.com/aiogram/aiogram) | Проверка initData, клиент Bot API | MIT |
+| [vite-plugin-pwa](https://github.com/vite-pwa/vite-plugin-pwa), [pywebpush](https://github.com/web-push-libs/pywebpush) | PWA и web push | MIT, MPL-2.0 |
+| [Crow sprite](https://smithygames.itch.io/crow-sprite) (smithygames) | Заглушка питомца: летает, сидит, дышит, моргает | CC0 |
+| [GothicVania Cemetery](https://opengameart.org/node/85024) (ansimuz) | Заглушки фонов и декора | CC0 |
+| [Gothic Pixel UI](https://abyssowl.itch.io/gothic-pixel-ui) (AbyssOwl), бесплатная часть | Рамки, кнопки, иконки | Нужно указать автора, перепродавать нельзя; перед коммитом в публичный репозиторий сверить условия |
+| Press Start 2P, Pixelify Sans | Пиксельные заголовки с кириллицей | OFL |
+
+---
+
+## 8. Открытые вопросы
+- Что видит партнёр для каждого типа вопроса — этапы 2 и 4.
+- Лимит смены вопроса (по умолчанию 3) — этап 4.
+- Свой домен вместо адреса Railway — до того, как позовём другие пары (этапы 5–6).
+- Фото-обмен; в каком Telegram-боте живёт игра; название продукта в Telegram — этап 6.
+
+---
+
+## 9. Вне рамок (ТЗ §11)
+Симуляция города и его жителей; открытый мир и карта районов; процедурные квесты; ИИ-чат или ИИ-психолог; обязательные голосовые сообщения; крафт, бои, инвентарь из множества ресурсов; публичные профили, рейтинги, сравнение пар; штрафы за отсутствие, убывающие шкалы, угрозы питомцу; монетизация, подписки и магазин до проверки основного цикла; нативные сборки и магазины приложений.

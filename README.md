@@ -77,4 +77,4 @@ python -m bot
 
 ### Как устроено
 
-Бот написан на Python 3.12 и aiogram 3, данные лежат в SQLite на Railway Volume. Каждая фишка — отдельный модуль в `bot/features/` и подключается одной строкой в `bot/features/__init__.py`. Схема базы меняется только новой миграцией в конце `MIGRATIONS` в `bot/db.py`. Подробности — в [PLAN.md](PLAN.md) и [CLAUDE.md](CLAUDE.md).
+Бот написан на Python 3.12 и aiogram 3, данные лежат в SQLite на Railway Volume. Каждая фишка — отдельный модуль в `bot/features/` и подключается одной строкой в `bot/features/__init__.py`. Схема базы меняется только новой миграцией в конце `MIGRATIONS` в `bot/db.py`. Подробности — в [docs/photo-bot.md](docs/photo-bot.md) и [CLAUDE.md](CLAUDE.md).
