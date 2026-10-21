@@ -143,6 +143,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pet/buy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Buy */
+        post: operations["buy_api_pet_buy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pet/wear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Wear */
+        post: operations["wear_api_pet_wear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronicle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chronicle */
+        get: operations["get_chronicle_api_chronicle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifications/push": {
         parameters: {
             query?: never;
@@ -274,6 +325,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/debug/sparks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sparks
+         * @description +100 искр в кошелёк пары.
+         */
+        post: operations["sparks_api_debug_sparks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/debug/reset-day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Day
+         * @description Стереть текущее послание с ответами: назначится новое.
+         */
+        post: operations["reset_day_api_debug_reset_day_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/debug/reset-progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Progress
+         * @description Пара с чистого листа: послания, искры, шкалы, косметика, реликвии, летопись.
+         */
+        post: operations["reset_progress_api_debug_reset_progress_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -299,6 +410,11 @@ export interface components {
             /** Vapid Public Key */
             vapid_public_key: string | null;
         };
+        /** BuyRequest */
+        BuyRequest: {
+            /** Item */
+            item: string;
+        };
         /** CardView */
         CardView: {
             /** Key */
@@ -320,10 +436,62 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** ChronicleEntryView */
+        ChronicleEntryView: {
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "hatch" | "choice" | "stage" | "habit" | "relic";
+            /** Text */
+            text: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ChronicleView */
+        ChronicleView: {
+            /** Entries */
+            entries: components["schemas"]["ChronicleEntryView"][];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HabitView */
+        HabitView: {
+            /** Trait */
+            trait: string;
+            /** Text */
+            text: string;
+        };
+        /** ItemView */
+        ItemView: {
+            /** Key */
+            key: string;
+            /** Slot */
+            slot: string;
+            /** Name */
+            name: string;
+            /** Price */
+            price: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "owned" | "available" | "locked";
+            /** Worn */
+            worn: boolean;
+            /** Requires Stage */
+            requires_stage: string | null;
+            requires_trait: components["schemas"]["TraitRequirement"] | null;
+            /** Line */
+            line: string;
         };
         /** JoinRequest */
         JoinRequest: {
@@ -364,6 +532,21 @@ export interface components {
             /** Pet Line */
             pet_line: string | null;
             notifications: components["schemas"]["NotificationsView"];
+        };
+        /**
+         * NewsView
+         * @description Что открылось при раскрытии.
+         */
+        NewsView: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "stage" | "habit" | "relic";
+            /** Name */
+            name: string;
+            /** Text */
+            text: string;
         };
         /** NotificationsView */
         NotificationsView: {
@@ -409,8 +592,22 @@ export interface components {
             hatched_at: string;
             /** Sparks */
             sparks: number;
+            /** Earned */
+            earned: number;
+            /** Stage */
+            stage: string;
+            /** Stages */
+            stages: components["schemas"]["StageView"][];
             /** Traits */
             traits: components["schemas"]["TraitValue"][];
+            /** Habits */
+            habits: components["schemas"]["HabitView"][];
+            /** Slots */
+            slots: components["schemas"]["SlotView"][];
+            /** Items */
+            items: components["schemas"]["ItemView"][];
+            /** Relics */
+            relics: components["schemas"]["RelicView"][];
         };
         /** PromptView */
         PromptView: {
@@ -451,6 +648,21 @@ export interface components {
             endpoint: string;
             keys: components["schemas"]["PushKeys"];
         };
+        /** RelicView */
+        RelicView: {
+            /** Theme */
+            theme: string;
+            /** Name */
+            name: string;
+            /** Text */
+            text: string;
+            /** Found */
+            found: boolean;
+            /** Progress */
+            progress: number;
+            /** Needed */
+            needed: number;
+        };
         /** ResultView */
         ResultView: {
             partner: components["schemas"]["Choice"];
@@ -462,11 +674,40 @@ export interface components {
             sparks: number;
             /** Traits */
             traits: components["schemas"]["TraitShift"][];
+            /** News */
+            news: components["schemas"]["NewsView"][];
+            /** Chronicle */
+            chronicle: string | null;
         };
         /** RevealRequest */
         RevealRequest: {
             /** Session Id */
             session_id: number;
+        };
+        /** SlotView */
+        SlotView: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+        };
+        /** StageView */
+        StageView: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Sparks */
+            sparks: number;
+            /** Reached */
+            reached: boolean;
+        };
+        /** TraitRequirement */
+        TraitRequirement: {
+            /** Name */
+            name: string;
+            /** At */
+            at: number;
         };
         /** TraitShift */
         TraitShift: {
@@ -485,6 +726,8 @@ export interface components {
             name: string;
             /** Value */
             value: number;
+            /** Next At */
+            next_at: number | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -498,6 +741,13 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WearRequest */
+        WearRequest: {
+            /** Item */
+            item: string;
+            /** Worn */
+            worn: boolean;
         };
     };
     responses: never;
@@ -847,6 +1097,152 @@ export interface operations {
             };
         };
     };
+    buy_api_pet_buy_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wear_api_pet_wear_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WearRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chronicle_api_chronicle_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronicleView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     subscribe_api_notifications_push_post: {
         parameters: {
             query?: never;
@@ -1101,6 +1497,153 @@ export interface operations {
         };
     };
     next_day_api_debug_next_day_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sparks_api_debug_sparks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_day_api_debug_reset_day_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_progress_api_debug_reset_progress_post: {
         parameters: {
             query?: never;
             header?: {

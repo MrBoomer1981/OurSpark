@@ -116,4 +116,29 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX push_subs_by_user ON push_subs (user_id) WHERE failed_at IS NULL;
     """,
+    # 3 — прогрессия: что открыла пара, летопись, надетая косметика
+    """
+    ALTER TABLE pets ADD COLUMN equipped jsonb NOT NULL DEFAULT '{}';  -- слот → ключ предмета
+
+    CREATE TABLE unlocks (
+        pair_id     bigint NOT NULL REFERENCES pairs (id),
+        key         text NOT NULL,  -- stage:<ключ> · habit:<шкала>:<ключ> · item:<ключ> · relic:<тема>
+        unlocked_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (pair_id, key)
+    );
+
+    CREATE TABLE chronicle (
+        id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        pair_id    bigint NOT NULL REFERENCES pairs (id),
+        event_key  text NOT NULL,  -- одно событие — одна запись: повтор не допишет вторую
+        kind       text NOT NULL,  -- hatch · choice · stage · habit · relic
+        data       jsonb NOT NULL DEFAULT '{}',  -- ключи контента: текст записи собирается по ним при показе
+        created_at timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (pair_id, event_key)
+    );
+
+    -- Уже собранным парам — первая страница летописи: питомец вылупился.
+    INSERT INTO chronicle (pair_id, event_key, kind, created_at)
+    SELECT pair_id, 'hatch', 'hatch', created_at FROM pets;
+    """,
 ]

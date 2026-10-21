@@ -4,6 +4,7 @@ import { api, call, type Me, type Result } from '../api/client';
 import { launch } from '../platform';
 import { credentials } from '../platform/credentials';
 import { errorText, texts } from '../texts';
+import { Confirm } from '../ui/Confirm';
 
 const DEBUG_USERS = [-1, -2];
 
@@ -51,9 +52,25 @@ export function DebugPanel({ me, onMe, onUnauthorized, onSwitch }: Props) {
             </button>
           )}
           {me?.pair?.status === 'complete' && (
-            <button className="button secondary" onClick={() => void run(call(api.POST('/api/debug/next-day')))}>
-              {texts.debug.nextDay}
-            </button>
+            <>
+              <button className="button secondary" onClick={() => void run(call(api.POST('/api/debug/next-day')))}>
+                {texts.debug.nextDay}
+              </button>
+              <button className="button secondary" onClick={() => void run(call(api.POST('/api/debug/sparks')))}>
+                {texts.debug.sparks}
+              </button>
+              <button className="button secondary" onClick={() => void run(call(api.POST('/api/debug/reset-day')))}>
+                {texts.debug.resetDay}
+              </button>
+              <Confirm
+                label={texts.debug.resetProgress}
+                question={texts.debug.resetConfirm}
+                yes={texts.debug.resetYes}
+                no={texts.debug.resetNo}
+                busy={false}
+                onConfirm={() => void run(call(api.POST('/api/debug/reset-progress')))}
+              />
+            </>
           )}
           {browserUser !== null &&
             DEBUG_USERS.filter((id) => id !== browserUser).map((id) => (

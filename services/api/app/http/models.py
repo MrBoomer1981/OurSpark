@@ -31,12 +31,63 @@ class TraitValue(BaseModel):
     key: str
     name: str
     value: int
+    next_at: int | None  # следующий порог: на нём откроется привычка; None — открыто всё
+
+
+class StageView(BaseModel):
+    key: str
+    name: str
+    sparks: int  # столько искр нужно заработать за всё время
+    reached: bool
+
+
+class HabitView(BaseModel):
+    trait: str  # название шкалы
+    text: str
+
+
+class SlotView(BaseModel):
+    key: str
+    name: str
+
+
+class TraitRequirement(BaseModel):
+    name: str  # название шкалы
+    at: int
+
+
+class ItemView(BaseModel):
+    key: str
+    slot: str
+    name: str
+    price: int
+    state: Literal["owned", "available", "locked"]  # куплен · в продаже · условие ещё не выполнено
+    worn: bool
+    requires_stage: str | None  # название стадии, с которой предмет появится в продаже
+    requires_trait: TraitRequirement | None  # или порог шкалы
+    line: str  # реакция питомца на обнову
+
+
+class RelicView(BaseModel):
+    theme: str  # название темы
+    name: str
+    text: str
+    found: bool
+    progress: int  # завершённых посланий темы, не больше needed
+    needed: int
 
 
 class PetView(BaseModel):
     hatched_at: datetime
     sparks: int  # общий кошелёк пары
+    earned: int  # заработано за всё время, без трат: по нему растёт стадия
+    stage: str  # ключ текущей стадии
+    stages: list[StageView]
     traits: list[TraitValue]
+    habits: list[HabitView]
+    slots: list[SlotView]
+    items: list[ItemView]
+    relics: list[RelicView]
 
 
 class OptionView(BaseModel):
@@ -62,12 +113,22 @@ class TraitShift(BaseModel):
     delta: int
 
 
+class NewsView(BaseModel):
+    """Что открылось при раскрытии."""
+
+    kind: Literal["stage", "habit", "relic"]
+    name: str  # стадия · шкала · реликвия
+    text: str  # реакция питомца на рост · привычка · описание реликвии
+
+
 class ResultView(BaseModel):
     partner: Choice
     same: bool
     line: str  # общая реакция питомца
     sparks: int
     traits: list[TraitShift]
+    news: list[NewsView]
+    chronicle: str | None  # новая страница летописи: совпавший выбор
 
 
 class PromptView(BaseModel):
@@ -98,6 +159,17 @@ class Me(BaseModel):
     notifications: NotificationsView
 
 
+class ChronicleEntryView(BaseModel):
+    id: int
+    kind: Literal["hatch", "choice", "stage", "habit", "relic"]
+    text: str
+    created_at: datetime
+
+
+class ChronicleView(BaseModel):
+    entries: list[ChronicleEntryView]  # от новых к старым
+
+
 class JoinRequest(BaseModel):
     code: str = Field(min_length=1, max_length=64)
 
@@ -109,6 +181,15 @@ class AnswerRequest(BaseModel):
 
 class RevealRequest(BaseModel):
     session_id: int
+
+
+class BuyRequest(BaseModel):
+    item: str = Field(min_length=1, max_length=64)
+
+
+class WearRequest(BaseModel):
+    item: str = Field(min_length=1, max_length=64)
+    worn: bool  # true — надеть, false — снять
 
 
 class PushKeys(BaseModel):

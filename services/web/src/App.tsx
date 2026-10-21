@@ -4,10 +4,12 @@ import { api, call, hasCredentials, type AppConfig, type Me } from './api/client
 import { DebugPanel } from './debug/DebugPanel';
 import { launch } from './platform';
 import { credentials } from './platform/credentials';
+import { Chronicle } from './screens/Chronicle';
 import { Login } from './screens/Login';
 import { Message } from './screens/Message';
 import { Nest, type InviteProblem } from './screens/Nest';
 import { Notice } from './screens/Notice';
+import { Pet } from './screens/Pet';
 import { Result } from './screens/Result';
 import { texts } from './texts';
 
@@ -18,8 +20,8 @@ type View =
   | { kind: 'login' } // PWA без сессии
   | { kind: 'nest'; me: Me };
 
-// Главный путь ведёт к посланию; «Послание» и «Результат» — вторичные экраны с кнопкой «назад».
-type Screen = 'nest' | 'message' | 'result';
+// Главный путь ведёт к посланию; остальное — вторичные экраны с кнопкой «назад».
+type Screen = 'nest' | 'message' | 'result' | 'pet' | 'chronicle';
 
 export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -113,10 +115,21 @@ export function App() {
     const prompt = view.me.prompt;
     if (screen === 'message' && prompt) {
       content = (
-        <Message prompt={prompt} onMe={showMe} onUnauthorized={unauthorized} onReveal={() => void reveal()} onBack={toNest} />
+        <Message
+          prompt={prompt}
+          pet={view.me.pet}
+          onMe={showMe}
+          onUnauthorized={unauthorized}
+          onReveal={() => void reveal()}
+          onBack={toNest}
+        />
       );
     } else if (screen === 'result' && prompt?.result) {
       content = <Result me={view.me} onBack={toNest} />;
+    } else if (screen === 'pet' && view.me.pet) {
+      content = <Pet me={view.me} onMe={showMe} onUnauthorized={unauthorized} onBack={toNest} />;
+    } else if (screen === 'chronicle' && view.me.pet) {
+      content = <Chronicle me={view.me} onUnauthorized={unauthorized} onBack={toNest} />;
     } else {
       content = (
         <Nest
@@ -129,6 +142,8 @@ export function App() {
           onOpenMessage={() => setScreen('message')}
           onReveal={() => void reveal()}
           onShowResult={() => setScreen('result')}
+          onOpenPet={() => setScreen('pet')}
+          onOpenChronicle={() => setScreen('chronicle')}
         />
       );
     }

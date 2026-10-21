@@ -88,16 +88,27 @@ async def add_answer(conn: asyncpg.Connection, session_id: int, user_id: int, an
     return inserted is not None
 
 
-async def complete(conn: asyncpg.Connection, session_id: int, day: date, result: dict[str, Any]) -> bool:
+async def completed_keys(conn: asyncpg.Connection, pair_id: int) -> set[str]:
+    """Карточки, которые пара завершила хотя бы раз."""
+    rows = await conn.fetch(
+        "SELECT DISTINCT prompt_key FROM prompt_sessions WHERE pair_id = $1 AND completed_at IS NOT NULL", pair_id
+    )
+    return {row["prompt_key"] for row in rows}
+
+
+async def claim(conn: asyncpg.Connection, session_id: int, day: date) -> bool:
     """Бронь раскрытия: только первый вызов получает True."""
     claimed = await conn.fetchval(
-        "UPDATE prompt_sessions SET completed_at = now(), completed_on = $2, result = $3"
+        "UPDATE prompt_sessions SET completed_at = now(), completed_on = $2"
         " WHERE id = $1 AND completed_at IS NULL RETURNING 1",
         session_id,
         day,
-        result,
     )
     return claimed is not None
+
+
+async def save_result(conn: asyncpg.Connection, session_id: int, result: dict[str, Any]) -> None:
+    await conn.execute("UPDATE prompt_sessions SET result = $2 WHERE id = $1", session_id, result)
 
 
 async def mark_seen(conn: asyncpg.Connection, session_id: int, user_id: int) -> None:
@@ -107,3 +118,17 @@ async def mark_seen(conn: asyncpg.Connection, session_id: int, user_id: int) -> 
         session_id,
         user_id,
     )
+
+
+async def delete(conn: asyncpg.Connection, session_id: int) -> None:
+    """Только для отладки: послание и ответы на него."""
+    await conn.execute("DELETE FROM answers WHERE session_id = $1", session_id)
+    await conn.execute("DELETE FROM prompt_sessions WHERE id = $1", session_id)
+
+
+async def delete_pair(conn: asyncpg.Connection, pair_id: int) -> None:
+    """Только для отладки: все послания пары и ответы на них."""
+    await conn.execute(
+        "DELETE FROM answers WHERE session_id IN (SELECT id FROM prompt_sessions WHERE pair_id = $1)", pair_id
+    )
+    await conn.execute("DELETE FROM prompt_sessions WHERE pair_id = $1", pair_id)

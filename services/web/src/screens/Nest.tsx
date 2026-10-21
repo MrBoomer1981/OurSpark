@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { api, call, type AppConfig, type Me, type Result } from '../api/client';
+import { Growth } from '../pet/Growth';
 import { PetView } from '../pet/PetView';
 import { copyText, shareLink } from '../platform/share';
 import { errorText, texts } from '../texts';
@@ -24,9 +25,11 @@ type Props = {
   onOpenMessage: () => void;
   onReveal: () => void;
   onShowResult: () => void;
+  onOpenPet: () => void;
+  onOpenChronicle: () => void;
 };
 
-/** Гнездо: нет пары → ждём партнёра → пара в сборе: питомец и послание дня. */
+/** Гнездо: нет пары → ждём партнёра → пара в сборе: питомец, послание дня, входы в «Питомца» и «Летопись». */
 export function Nest(props: Props) {
   const { me, config, invite, onMe, onInvite, onUnauthorized } = props;
   const [busy, setBusy] = useState(false);
@@ -84,6 +87,14 @@ export function Nest(props: Props) {
         <>
           <Together me={me} pair={me.pair} />
           {me.prompt && <PromptStatus prompt={me.prompt} {...props} />}
+          <div className="row">
+            <button className="button secondary" onClick={props.onOpenPet}>
+              {texts.complete.pet}
+            </button>
+            <button className="button secondary" onClick={props.onOpenChronicle}>
+              {texts.complete.chronicle}
+            </button>
+          </div>
           <NotificationsBanner me={me} config={config} onMe={onMe} />
           <Confirm
             label={texts.complete.leave}
@@ -162,18 +173,18 @@ function Waiting({ pair, busy, onCancel }: { pair: Pair; busy: boolean; onCancel
 }
 
 function Together({ me, pair }: { me: Me; pair: Pair }) {
-  const traits = (me.pet?.traits ?? []).filter((trait) => trait.value > 0);
   return (
     <section className="nest">
-      <PetView sprite="pet.hatchling" />
+      {me.pet && <PetView pet={me.pet} />}
       {me.pet_line && <p className="bubble">{me.pet_line}</p>}
       <p className="small">
         {texts.complete.together} <b>{pair.partner?.name}</b>
       </p>
       {me.pet && (
-        <p className="muted small">
-          {[texts.complete.sparks(me.pet.sparks), ...traits.map((t) => `${t.name} ${t.value}`)].join(' · ')}
-        </p>
+        <>
+          <Growth pet={me.pet} />
+          <p className="muted small">{texts.complete.sparks(me.pet.sparks)}</p>
+        </>
       )}
     </section>
   );

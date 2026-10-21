@@ -15,7 +15,7 @@ from typing import Literal
 import asyncpg
 
 from app import notify
-from app.game import pet
+from app.game import chronicle, pet
 from app.store import pairs, users
 from app.store.pairs import Pair
 from app.store.users import User
@@ -88,6 +88,7 @@ async def join(conn: asyncpg.Connection, user_id: int, invite_code: str) -> None
             return
         await pairs.mark_complete(conn, pair.id)
         await pet.hatch(conn, pair.id)
+        await chronicle.write(conn, pair.id, chronicle.HATCH, chronicle.HATCH)  # первая страница летописи
         for member in members:
             await notify.enqueue(
                 conn,

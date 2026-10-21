@@ -37,3 +37,24 @@ async def next_day(user: CurrentUser, conn: Conn, ctx: Ctx) -> Me:
     """Часы пары на день вперёд: если послание раскрыто, придёт новое."""
     await debug.next_day(conn, user.id)
     return await view(conn, user.id, ctx)
+
+
+@router.post("/sparks")
+async def sparks(user: CurrentUser, conn: Conn, ctx: Ctx) -> Me:
+    """+100 искр в кошелёк пары."""
+    await debug.grant_sparks(conn, user.id)
+    return await view(conn, user.id, ctx)
+
+
+@router.post("/reset-day")
+async def reset_day(user: CurrentUser, conn: Conn, ctx: Ctx) -> Me:
+    """Стереть текущее послание с ответами: назначится новое."""
+    await debug.reset_day(conn, user.id)
+    return await view(conn, user.id, ctx)
+
+
+@router.post("/reset-progress")
+async def reset_progress(user: CurrentUser, conn: Conn, ctx: Ctx) -> Me:
+    """Пара с чистого листа: послания, искры, шкалы, косметика, реликвии, летопись."""
+    await debug.reset_progress(conn, user.id)
+    return await view(conn, user.id, ctx)

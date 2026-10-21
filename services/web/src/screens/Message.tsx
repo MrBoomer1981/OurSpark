@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { api, call, type Me } from '../api/client';
-import { PetView } from '../pet/PetView';
+import { PetView, type Pet } from '../pet/PetView';
 import { errorText, texts } from '../texts';
 import { BackLink } from '../ui/BackLink';
 
@@ -9,6 +9,7 @@ type Prompt = NonNullable<Me['prompt']>;
 
 type Props = {
   prompt: Prompt;
+  pet: Pet | null;
   onMe: (me: Me) => void;
   onUnauthorized: () => void;
   onReveal: () => void;
@@ -16,7 +17,7 @@ type Props = {
 };
 
 /** Послание: карточка, варианты, что увидит партнёр, «Отправить». После ответа — реакция питомца. */
-export function Message({ prompt, onMe, onUnauthorized, onReveal, onBack }: Props) {
+export function Message({ prompt, pet, onMe, onUnauthorized, onReveal, onBack }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -38,7 +39,7 @@ export function Message({ prompt, onMe, onUnauthorized, onReveal, onBack }: Prop
       <main className="screen">
         <BackLink onBack={onBack} />
         <section className="nest">
-          <PetView sprite="pet.hatchling" />
+          {pet && <PetView pet={pet} />}
           {prompt.reaction && <p className="bubble">{prompt.reaction}</p>}
           {prompt.answer_sparks !== null && <p className="reward">{texts.message.reward(prompt.answer_sparks)}</p>}
         </section>

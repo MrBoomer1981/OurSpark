@@ -6,72 +6,92 @@
 # Текст с двоеточием берите в кавычки, иначе YAML прочтёт его не как текст.
 #
 # kind: choice — совместный выбор: каждый выбирает вариант, результат открывается после ответа обоих.
+# theme — тема из themes.yaml: три завершённых послания одной темы приносят паре её реликвию.
 # trait — шкала питомца, которую сдвигает вариант (ключ из pet.yaml).
+# chronicle — запись летописи на случай, когда вариант выбрали оба; без неё совпадение в летопись не попадает.
 #
-# Черновики для этапа 2; библиотека из 60–80 карточек всех типов — этап 4.
+# Черновики; библиотека из 60–80 карточек всех типов — этап 4.
 
 - key: nest-key-or-flower
   kind: choice
+  theme: home
   text: Что принесём в гнездо?
   options:
     - key: key
       text: Старый ключ
       trait: curiosity
+      chronicle: Вы выбрали старый ключ. Теперь он висит над гнездом — вдруг найдётся дверь.
     - key: flower
       text: Цветок, который никогда не вянет
       trait: tenderness
+      chronicle: Вы выбрали цветок, который никогда не вянет. Теперь я храню его рядом с кроватью.
 
 - key: night-walk
   kind: choice
+  theme: adventure
   text: Куда отправимся этой ночью?
   options:
     - key: roof
       text: На крышу — смотреть на звёзды
       trait: courage
+      chronicle: Ночь на крыше. Звёзд было больше, чем перьев в гнезде.
     - key: library
       text: В старую библиотеку
       trait: curiosity
+      chronicle: Ночь в старой библиотеке. Одна книга теперь живёт в гнезде.
 
 - key: rainy-evening
   kind: choice
+  theme: home
   text: Вечер, за окном дождь. Что делаем?
   options:
     - key: blankets
       text: Пледы, чай и сказки
       trait: tenderness
+      chronicle: Вечер пледов и сказок. Дождь стучал в окно, но в гнездо так и не попал.
     - key: puddles
       text: Бежим гулять по лужам
       trait: mischief
+      chronicle: Прогулка по лужам. Перья сохли до самого утра.
 
 - key: wanderer
   kind: choice
+  theme: adventure
   text: В дверь гнезда постучался странник в плаще. Как поступим?
   options:
     - key: invite
       text: Пригласим к огню
       trait: tenderness
+      chronicle: Странник в плаще грелся у огня и оставил на память пуговицу.
     - key: riddle
       text: Сначала загадаем загадку
       trait: mischief
+      chronicle: Странник отгадал загадку не сразу, а уходил с улыбкой.
 
 - key: treasure-map
   kind: choice
+  theme: adventure
   text: На чердаке нашлась карта с крестиком. Что дальше?
   options:
     - key: search
       text: Идём искать клад
       trait: courage
+      chronicle: Клад искали до рассвета. Нашлась ржавая ложка — лучший клад на свете.
     - key: study
       text: Сначала разгадаем все пометки
       trait: curiosity
+      chronicle: Все пометки на карте разгаданы. Одна из них — про это гнездо.
 
 - key: candle
   kind: choice
+  theme: home
   text: Какую свечу зажжём сегодня?
   options:
     - key: honey
       text: Медовую — для уюта
       trait: tenderness
+      chronicle: Медовая свеча горела весь вечер. В гнезде до сих пор пахнет мёдом.
     - key: green
       text: Зелёную — для приключений
       trait: courage
+      chronicle: Зелёная свеча зажжена — к приключениям. Посмотрим, каким.

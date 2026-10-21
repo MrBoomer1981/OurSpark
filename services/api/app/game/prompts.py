@@ -59,6 +59,11 @@ async def current(conn: asyncpg.Connection, pair_id: int, content: Content, defa
     return Today(session, content.cards[session.prompt_key], await prompts.answers(conn, session.id))
 
 
+async def completed_keys(conn: asyncpg.Connection, pair_id: int) -> set[str]:
+    """Карточки, которые пара завершила хотя бы раз."""
+    return await prompts.completed_keys(conn, pair_id)
+
+
 async def _pick(conn: asyncpg.Connection, pair_id: int, content: Content) -> str:
     """Карточка на сегодня: ещё не завершённая парой, а если пройдены все — та, что была давнее всех."""
     used = await prompts.used_keys(conn, pair_id)  # от новых к старым
