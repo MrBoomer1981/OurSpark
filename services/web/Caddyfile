@@ -1,0 +1,30 @@
+{
+	admin off
+}
+
+# PORT задаёт Railway; HTTPS снаружи держит Railway, здесь только HTTP.
+:{$PORT:8080} {
+	encode zstd gzip
+
+	# Внутренние маршруты api — только для bot по приватной сети, снаружи их нет.
+	handle /api/internal/* {
+		respond 404
+	}
+
+	# api наружу не открыт: всё под /api идёт к нему по приватной сети как есть, с префиксом.
+	handle /api/* {
+		reverse_proxy {$API_UPSTREAM:localhost:8000}
+	}
+
+	handle {
+		root * /srv
+		# Сборка в /static/ с хешем в имени и не меняется — кешируем навсегда.
+		# Остальное (index.html, service worker, графика из /assets/) браузер перепроверяет,
+		# чтобы новый деплой и новые картинки были видны сразу.
+		@hashed path /static/*
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		header ?Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

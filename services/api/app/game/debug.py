@@ -1,0 +1,22 @@
+"""Действия отладочной панели. Маршруты к ним есть только с DEBUG=true."""
+
+import asyncpg
+
+from app import texts
+from app.game import pairs
+from app.store import users
+
+
+def stub_partner_id(pair_id: int) -> int:
+    """Подставной партнёр у каждой пары свой. Отрицательный id: в Telegram таких нет."""
+    return -(1000 + pair_id)
+
+
+async def add_stub_partner(conn: asyncpg.Connection, user_id: int) -> None:
+    """Подставной партнёр входит в пару человека — как настоящий, с уведомлением."""
+    user = await users.get(conn, user_id)
+    state = await pairs.state(conn, user) if user else None
+    if state is None:
+        return
+    stub = await users.ensure(conn, stub_partner_id(state.pair.id), texts.STUB_PARTNER)
+    await pairs.join(conn, stub.id, state.pair.invite_code)

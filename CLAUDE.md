@@ -5,18 +5,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 - **Rebuild in progress.** The project is being rebuilt into «Воронье гнездо»: an asynchronous game in which a couple grows a shared pet. One web app runs as a Telegram Mini App and as a PWA, backed by the services `web`, `api`, `bot` and Railway Postgres. `PLAN.md` is the rebuild plan and the source of truth (decisions, rules, schema, milestones). The product brief is `voronye_gnezdo_mvp_spec.md`; `PLAN.md` wins where they differ.
-- **Next: milestone 0.** `services/` does not exist yet; commands and architecture notes for the new services are added here as milestones land.
+- **Milestones 0 and 1 are written and checked locally but not pushed yet:** the user wants one push after milestone 1. After the push come the Railway setup of milestone 0 (see Deploy) and the checks inside Telegram. Commands and architecture notes for the new services are added here as milestones land.
 - **The OurSpark photo bot stays in production, unchanged, until milestone 6** (repo `MrBoomer1981/OurSpark`, branch `main`; one bot serves many pairs; pair #1 is the user and their partner). Its code is `bot/`, `themes/` and the root `Dockerfile`; its spec is `docs/photo-bot.md`. Change it only to fix bugs.
 
 ## Working rules
 
 - **Plan before code.** Every feature or change starts with a plan: update `PLAN.md` (`docs/photo-bot.md` for the photo bot) or describe the plan in chat, and wait for the user's go. Only then write code. Every rebuild milestone starts with a plan update.
 - **No tests in the repo** — this also overrides brief §15.7. No test files, test dependencies or test steps in plans. Behaviour is checked by hand: the photo bot with `/dev`, the game with the debug panel (both only with `DEBUG=true`). Throwaway verification scripts live outside the repository.
-- **Push = production deploy.** A push to `main` redeploys every Railway service whose Watch Paths changed. Commit and push only when the user explicitly says so; after a push, watch the Railway deploy and check the startup log. For the photo bot: `База: … · пар: … · участников: …` (counts must not drop — nothing was lost), then `Темы: …`, `Фичи: … · новые пары: …`, `Планировщик: задач …`.
+- **Push = production deploy.** A push to `main` redeploys every Railway service whose Watch Paths match the changed files, and every service without Watch Paths (the photo bot for now — see Deploy). Commit and push only when the user explicitly says so; after a push, watch the Railway deploy and check the startup log. For the photo bot: `База: применена миграция N` only when the deploy brings a new migration (expected, not an error), then `База: … · пар: … · участников: …` (counts must not drop — nothing was lost), `Темы: …`, `Фичи: … · новые пары: …`, `Планировщик: задач …`. For the game: `api: порт …` and `База: схема vN` (`api`), `Бот: @… · Mini App: …` (`bot`).
 - **Languages.** Talk to the user in Russian. `PLAN.md` is written in Russian (the user's request, 2026-10-19), as is `README.md`; the other technical docs (`CLAUDE.md`, `docs/`) are written in English. Code comments and docstrings stay in Russian — do not translate them.
 - **User-facing texts** are Russian and live in one place per kind:
   - `bot/texts.py` — the photo bot;
   - `services/web/src/texts.ts` — the game UI;
+  - `services/bot/app/texts.py` — the game bot;
   - the texts module of `api` — notifications;
   - `services/api/content/` — prompt cards and pet lines.
 
@@ -33,7 +34,23 @@ python -m bot          # needs .env (see .env.example) with the token of a SEPAR
 railway logs           # production logs (this folder is linked to the OurSpark service)
 ```
 
-Deploy = push to `main`; Railway builds the root `Dockerfile` for the photo bot. Commands for `services/*` are added in milestone 0.
+Deploy = push to `main`; Railway builds the root `Dockerfile` for the photo bot. No linter, formatter or type checker is configured (no `pyproject.toml` or `ruff.toml`).
+
+Game, locally (checks inside Telegram run on Railway with the test bot after a push):
+
+```bash
+docker compose up -d              # Postgres 18, the same major version as Railway's
+# services/api: python3.12 -m venv .venv, pip install -r requirements.txt, cp .env.example .env
+uvicorn app.main:app --reload     # api on :8000; /api/docs and the OpenAPI schema only with DEBUG=true
+# services/web
+npm install && npm run dev        # Vite; proxies /api to API_UPSTREAM (default localhost:8000)
+npm run api:types                 # after api changes: src/api/schema.d.ts from the running api (DEBUG=true); commit it
+npm run build                     # tsc --noEmit + vite build — the only type check
+# services/bot: .env with the game's TEST bot token
+python -m app                     # never while the Railway `bot` polls the same token
+```
+
+Without `BOT_TOKEN` the api starts only with `DEBUG=true`: no Telegram, so the UI is used in a desktop browser through the debug login (stub users).
 
 ## Game architecture (target — details in `PLAN.md` §3)
 
@@ -60,6 +77,24 @@ Deploy = push to `main`; Railway builds the root `Dockerfile` for the photo bot.
   - Schema changes only by appended migrations.
   - Assets are referenced by logical names through the manifest.
 
+What already exists (milestones 0–1):
+
+- **Layers in `api`:** `http/` (routes, models, auth) → `game/` (rules) → `store/` (SQL). Routes that change something return the new `Me`, and `web` replaces its state with it. Rule violations come back as 409 with `{"detail": "<code>"}`; `web` turns codes into texts.
+- **Auth** (`services/api/app/http/deps.py`) accepts three schemes:
+  - `tma <initData>` — checked with `BOT_TOKEN`, at most a day old;
+  - `Bearer <token>` — a PWA session; only its sha256 is stored;
+  - `debug <negative id>` — only with `DEBUG`. Telegram ids are never negative, so a real person cannot be impersonated.
+
+  PWA login: `POST /api/auth/login` → `t.me/<bot>?start=login_<nonce>` → the bot asks, then calls `POST /api/internal/login/confirm` with `X-Internal-Secret` → the PWA polls `POST /api/auth/login/exchange`. Caddy answers 404 to `/api/internal/*` from outside.
+- **Pairs** (`game/pairs.py`): locks are taken in one order, the pair row first and then the user row. Joining one's own pair again is not an error. The pet row and the `partner_joined` notification are written in the transaction that completes the pair.
+- **Outbox:** `notify.enqueue` writes into the caller's transaction with a unique key. `notify/relay.py` claims due rows every 2 s (`FOR UPDATE SKIP LOCKED`) and sends them through the Bot API. On 403 or «chat not found» it sets `users.tg_reachable = false` and does not retry. Rows for stub users (negative ids) are just marked sent.
+- **`web` client:** `src/api/client.ts` adds the auth header, and `call()` returns `{ok, data}` or `{ok: false, status, code}`. The service worker is registered only in PWA mode, never inside Telegram. Vite emits the bundle to `/static/` (immutable in Caddy). `public/assets/` holds game art, which is revalidated and referenced only through `src/assets.ts`.
+- **Every `api` route starts with `/api`.** Caddy (`services/web/Caddyfile`) proxies `/api/*` without stripping the prefix, and Vite does the same in dev. `GET /api/health` also checks the database; it is the Railway healthcheck.
+- **`python -m app` (`services/api/app/__main__.py`) binds one dual-stack socket** on `PORT` (8000 locally and on Railway). `uvicorn --host ::` would listen on IPv6 only, and `--host 0.0.0.0` on IPv4 only, while Railway's private network is IPv6-only in legacy environments. Keep the socket.
+- **Migrations:** `MIGRATIONS` in `services/api/app/store/migrations.py`; the version is the position in the list (from 1), tracked in `schema_migrations`. They are applied at startup in one transaction under a Postgres advisory lock, so two `api` copies during a deploy apply each migration once.
+- **Logs:** loguru writes INFO and below to stdout and WARNING and above to stderr, because Railway shows everything on stderr as an error. uvicorn logs warnings only, with no access log.
+- **`web` mode:** `src/platform/` picks the mode at startup: Telegram launch params mean Telegram mode (tma.js, `@tma.js/sdk-react`), anything else is PWA mode. Caddy serves `/assets/*` as immutable and everything else as `no-cache`.
+
 ## Photo bot architecture (production until milestone 6)
 
 A Telegram bot for couples: morning theme, daytime photos, evening exchange. Python 3.12, aiogram 3 in polling mode, SQLite via aiosqlite on a Railway Volume, pydantic-settings, loguru. One process: polling and the scheduler share one asyncio loop.
@@ -67,7 +102,7 @@ A Telegram bot for couples: morning theme, daytime photos, evening exchange. Pyt
 **Core, pairs and features.**
 - Core modules: `bot/daily.py` (day logic), `bot/repo.py` (all SQL), `bot/scheduler.py`, `bot/app.py`, `bot/access.py`, `bot/ui.py`.
 - **Pairs.** `Core` is the shared context (bot, connection, themes, features, clock `core.clock`). `App` is one pair's context with the interface the day logic and features use (`app.repo`, `app.today()`, `app.invite_link`, …): `Repo(conn, pair_id)` scopes every query to the pair, and time is in the pair's zone (pair setting `timezone`, default `TIMEZONE`). `Registry` holds shared operations: create a pair, join by code, `/leave`, list complete pairs. `access.py` resolves the sender's pair and injects `app` and `user` into handlers (both `None` when the sender is not in a pair; then only `/start`, `/help` and `pair:*` buttons pass). `AccessMiddleware` is attached only to `message` and `callback_query` (it also drops groups and channels): a handler for any other update type gets no `app`/`user` and no access check. The scheduler walks all complete pairs on every tick. **Every new query on pair data must filter by `pair_id`.**
-- Everything user-facing is a feature in `bot/features/`: a module with a `Feature` object (router, jobs, commands, `card`, `on_exchange` hook) registered in `bot/features/__init__.py`. Registry order = router order (the first matching handler takes the update) and the order of scheduler jobs (after the core job `daily.redeliver`); `fallback` is always last, `dev` is enabled only with `DEBUG=true`. `Feature.commands` reach the Telegram command menu through `set_my_commands` at startup — nothing else to register. A new feature = a new module + one registry line; touch the core only if the feature needs a new hook.
+- Everything user-facing is a feature in `bot/features/`: a module with a `Feature` object (`bot/feature.py` defines it and the hook signatures: router, jobs, commands, `card`, `on_exchange`) registered in `bot/features/__init__.py`. Registry order = router order (the first matching handler takes the update) and the order of scheduler jobs (after the core job `daily.redeliver`); `fallback` is always last, `dev` is enabled only with `DEBUG=true`. `Feature.commands` reach the Telegram command menu through `set_my_commands` at startup — nothing else to register. A new feature = a new module + one registry line; touch the core only if the feature needs a new hook.
 - **Evening card** — one message after the exchange album. `daily.build_card` builds the header (theme, date, author, streak); features add lines and a button row through `Feature.card` (reactions use it). The card is re-delivered after restarts (delivery kind `card`), `on_exchange` is not — put new evening things into the card.
 
 Invariants:
@@ -97,3 +132,8 @@ Invariants:
 - Never run locally with the production token: the local copy and production would steal updates from each other (`Conflict` in logs).
 - Deploys of the photo bot are fine any time, including during the day when a photo was already sent (see "Reliability on deploy" in `docs/photo-bot.md`). The photo bot stays on SQLite; Postgres is for the game only.
 - **Game services** are set up in milestone 0 as described in `PLAN.md` §4: Root Directory and Watch Paths per service, Railway Postgres, only `web` public, a separate test bot until milestone 6.
+- Game variables are listed in `PLAN.md` §4. Through milestone 1:
+  - `api`: `DATABASE_URL` (a reference to the Postgres variable), `PORT=8000`, `BOT_TOKEN`, `INTERNAL_SECRET`, `DEBUG=true` while only the test bot exists;
+  - `web`: `API_UPSTREAM`;
+  - `bot`: `BOT_TOKEN`, `WEB_APP_URL`, `API_URL`, and `INTERNAL_SECRET` as a reference to `api`'s.
+- **Milestone 0 also isolates the photo bot** (`PLAN.md` §4): Watch Paths on its files (`bot/`, `themes/`, `Dockerfile`, `.dockerignore`, `requirements.txt`), so pushes to `services/` or docs stop redeploying it, and a root `.dockerignore` that keeps `services/` and `docs/` out of its image. The `.dockerignore` part is done; the Watch Paths are set in the Railway step (checked 2026-10-20: `watchPatterns` is still empty).
