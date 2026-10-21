@@ -1,4 +1,5 @@
 import {
+  backButton,
   init,
   isTMA,
   miniApp,
@@ -25,6 +26,7 @@ export function initPlatform(): void {
   miniApp.mount.ifAvailable();
   miniApp.setHeaderColor.ifAvailable(background);
   miniApp.setBgColor.ifAvailable(background);
+  backButton.mount.ifAvailable();
   if (viewport.mount.isAvailable()) {
     viewport
       .mount()

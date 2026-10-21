@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 - **Rebuild in progress.** The project is being rebuilt into «Воронье гнездо»: an asynchronous game in which a couple grows a shared pet. One web app runs as a Telegram Mini App and as a PWA, backed by the services `web`, `api`, `bot` and Railway Postgres. `PLAN.md` is the rebuild plan and the source of truth (decisions, rules, schema, milestones). The product brief is `voronye_gnezdo_mvp_spec.md`; `PLAN.md` wins where they differ.
-- **Milestones 0 and 1 are pushed and deployed (2026-10-21).** On Railway, `api`, `web`, `bot` and Postgres run with the test bot @Ushousebot, whose Main Mini App is `https://our-home.up.railway.app`. Next come the milestone 1 checks inside Telegram (`PLAN.md` §6), then milestone 2. Commands and architecture notes for the new services are added here as milestones land.
+- **Milestones 0–2 are pushed (2026-10-21).** 0–1 are deployed and checked in Telegram with the test bot @Ushousebot, whose Main Mini App is `https://our-home.up.railway.app`. Next come the milestone 2 checks inside Telegram and in the iPhone PWA, then milestone 3. **Visual design waits until after the functional milestones** (the user, 2026-10-21): keep screens plain. Commands and architecture notes for the new services are added here as milestones land.
 - **The OurSpark photo bot stays in production, unchanged, until milestone 6** (repo `MrBoomer1981/OurSpark`, branch `main`; one bot serves many pairs; pair #1 is the user and their partner). Its code is `bot/`, `themes/` and the root `Dockerfile`; its spec is `docs/photo-bot.md`. Change it only to fix bugs.
 
 ## Working rules
@@ -45,7 +45,7 @@ uvicorn app.main:app --reload     # api on :8000; /api/docs and the OpenAPI sche
 # services/web
 npm install && npm run dev        # Vite; proxies /api to API_UPSTREAM (default localhost:8000)
 npm run api:types                 # after api changes: src/api/schema.d.ts from the running api (DEBUG=true); commit it
-npm run build                     # tsc --noEmit + vite build — the only type check
+npm run build                     # tsc for the app and for src/sw.ts, then vite build — the only type checks
 # services/bot: .env with the game's TEST bot token
 python -m app                     # never while the Railway `bot` polls the same token
 ```
@@ -77,7 +77,7 @@ Without `BOT_TOKEN` the api starts only with `DEBUG=true`: no Telegram, so the U
   - Schema changes only by appended migrations.
   - Assets are referenced by logical names through the manifest.
 
-What already exists (milestones 0–1):
+What already exists (milestones 0–2):
 
 - **Layers in `api`:** `http/` (routes, models, auth) → `game/` (rules) → `store/` (SQL). Routes that change something return the new `Me`, and `web` replaces its state with it. Rule violations come back as 409 with `{"detail": "<code>"}`; `web` turns codes into texts.
 - **Auth** (`services/api/app/http/deps.py`) accepts three schemes:
@@ -88,7 +88,17 @@ What already exists (milestones 0–1):
   PWA login: `POST /api/auth/login` → `t.me/<bot>?start=login_<nonce>` → the bot asks, then calls `POST /api/internal/login/confirm` with `X-Internal-Secret` → the PWA polls `POST /api/auth/login/exchange`. Caddy answers 404 to `/api/internal/*` from outside.
 - **Pairs** (`game/pairs.py`): locks are taken in one order, the pair row first and then the user row. Joining one's own pair again is not an error. The pet row and the `partner_joined` notification are written in the transaction that completes the pair.
 - **Outbox:** `notify.enqueue` writes into the caller's transaction with a unique key. `notify/relay.py` claims due rows every 2 s (`FOR UPDATE SKIP LOCKED`) and sends them through the Bot API. On 403 or «chat not found» it sets `users.tg_reachable = false` and does not retry. Rows for stub users (negative ids) are just marked sent.
-- **`web` client:** `src/api/client.ts` adds the auth header, and `call()` returns `{ok, data}` or `{ok: false, status, code}`. The service worker is registered only in PWA mode, never inside Telegram. Vite emits the bundle to `/static/` (immutable in Caddy). `public/assets/` holds game art, which is revalidated and referenced only through `src/assets.ts`.
+- **Content** lives in `services/api/content/*.yaml` and is loaded and validated at startup (`app/content`): a broken file stops `api` from starting instead of failing for a pair later. Card and option keys are permanent; texts may change. A YAML string that contains `: ` must be quoted, otherwise it is read as a mapping (the loader rejects that).
+- **Prompt of the day** (`game/prompts.py`):
+  - `GET /api/me` assigns it. A pair has one active session; the next one is assigned only on a later pair-day than the reveal (`completed_on`).
+  - The state is derived (`Today.state`), never stored.
+  - The mutual rule lives only in `Today.partner_answer`.
+  - Answers lock the session row, so exactly one of two simultaneous answers sees the partner's and sends «результат готов».
+- **Reveal** (`game/reveal.py`) is the one cross-domain transaction. The session row is locked and `completed_at` claimed; the +10 sparks, the trait shifts and the snapshot in `prompt_sessions.result` happen once; each viewer's `result_seen_at` is set.
+- **Rewards:** `reward_ledger` with unique event keys (`answer:<session>:<user>`, `reveal:<session>`); the balance is the sum; amounts live in `game/rewards.py` and are sent to `web` (`answer_sparks`), never hard-coded there. Traits are columns of `pets`, changed only under the reveal claim and never down.
+- **Pair clock** (`game/clock.py`): the day is the date in the pair's zone (`TIMEZONE`) plus a `DEBUG` day offset stored in `pair_settings` («следующий день» in the debug panel).
+- **Channels:** the relay tries web push first (`notify/push.py`, VAPID; 404/410 disables a subscription) and falls back to the bot. `POST /api/notifications/push` accepts only endpoints of browser push services. A `tma` request with `allows_write_to_pm` marks the Telegram channel as working.
+- **`web` client:** `src/api/client.ts` adds the auth header, and `call()` returns `{ok, data}` or `{ok: false, status, code}`. Screens: `Nest`, then `Message` and `Result` as secondary screens with the Telegram back button (`ui/BackLink`). The service worker is `src/sw.ts` (vite-plugin-pwa `injectManifest`, its own `tsconfig.sw.json`): precache plus the push and notification-click handlers. The service worker is registered only in PWA mode, never inside Telegram. Vite emits the bundle to `/static/` (immutable in Caddy). `public/assets/` holds game art, which is revalidated and referenced only through `src/assets.ts`.
 - **Every `api` route starts with `/api`.** Caddy (`services/web/Caddyfile`) proxies `/api/*` without stripping the prefix, and Vite does the same in dev. `GET /api/health` also checks the database; it is the Railway healthcheck.
 - **`python -m app` (`services/api/app/__main__.py`) binds one dual-stack socket** on `PORT` (8000 locally and on Railway). `uvicorn --host ::` would listen on IPv6 only, and `--host 0.0.0.0` on IPv4 only, while Railway's private network is IPv6-only in legacy environments. Keep the socket.
 - **Migrations:** `MIGRATIONS` in `services/api/app/store/migrations.py`; the version is the position in the list (from 1), tracked in `schema_migrations`. They are applied at startup in one transaction under a Postgres advisory lock, so two `api` copies during a deploy apply each migration once.
@@ -139,7 +149,7 @@ Invariants:
   - Reference variables (`${{api.RAILWAY_PRIVATE_DOMAIN}}`) resolve at deploy time. A service deployed together with the one it references can get an empty value, as `web`'s `API_UPSTREAM` did (Caddy dialled `:8000`); redeploy it once.
   - Backup schedules need the Pro plan. The project is on Hobby, so neither the game's Postgres nor the photo bot's volume has scheduled backups.
 - Game variables are listed in `PLAN.md` §4. Through milestone 1:
-  - `api`: `DATABASE_URL` (a reference to the Postgres variable), `PORT=8000`, `BOT_TOKEN` (a reference, `${{bot.BOT_TOKEN}}`: the token is pasted once, into `bot`), `INTERNAL_SECRET`, `DEBUG=true` while only the test bot exists;
+  - `api`: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (milestone 2; without all three web push is off), `DATABASE_URL` (a reference to the Postgres variable), `PORT=8000`, `BOT_TOKEN` (a reference, `${{bot.BOT_TOKEN}}`: the token is pasted once, into `bot`), `INTERNAL_SECRET`, `DEBUG=true` while only the test bot exists;
   - `web`: `API_UPSTREAM`;
   - `bot`: `BOT_TOKEN`, `WEB_APP_URL`, `API_URL`, and `INTERNAL_SECRET` as a reference to `api`'s.
 - **The photo bot is isolated from the game:** its Watch Paths cover only its own files (`bot/`, `themes/`, `Dockerfile`, `.dockerignore`, `requirements.txt`; set 2026-10-21), and the root `.dockerignore` keeps `services/` and `docs/` out of its image.

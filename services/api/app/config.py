@@ -1,6 +1,8 @@
 """Конфиг из переменных окружения: на Railway — из Variables, локально — из .env."""
 
-from pydantic import SecretStr, model_validator
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +15,20 @@ class Config(BaseSettings):
     bot_token: SecretStr | None = None  # бот, в котором живёт Mini App; без него — только с DEBUG
     internal_secret: SecretStr | None = None  # общий секрет с bot: подтверждение входа в PWA
     new_pairs: bool = True  # false — новые пары не создаются, собранные играют дальше
+    timezone: str = "Europe/Moscow"  # часовой пояс пар: по нему меняется день
+    # Web push. Без всех трёх push выключен, уведомления идут только ботом.
+    vapid_public_key: str | None = None
+    vapid_private_key: SecretStr | None = None
+    vapid_subject: str | None = None  # mailto: или https:, куда службы push пишут о проблемах
+
+    @field_validator("timezone")
+    @classmethod
+    def _check_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise ValueError(f"Неизвестный часовой пояс: {value}") from error
+        return value
 
     @model_validator(mode="after")
     def _check_token(self) -> "Config":

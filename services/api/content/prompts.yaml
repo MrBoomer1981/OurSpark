@@ -1,0 +1,77 @@
+# Карточки «Послания дня».
+#
+# Ключ карточки и ключи вариантов постоянные: после первого показа их не меняют и карточки
+# не удаляют — по ключам база помнит ответы и завершённые послания. Текст править можно.
+# Тексты: никаких родовых окончаний у участников («выбрал(а)» нельзя), имена — в именительном падеже.
+# Текст с двоеточием берите в кавычки, иначе YAML прочтёт его не как текст.
+#
+# kind: choice — совместный выбор: каждый выбирает вариант, результат открывается после ответа обоих.
+# trait — шкала питомца, которую сдвигает вариант (ключ из pet.yaml).
+#
+# Черновики для этапа 2; библиотека из 60–80 карточек всех типов — этап 4.
+
+- key: nest-key-or-flower
+  kind: choice
+  text: Что принесём в гнездо?
+  options:
+    - key: key
+      text: Старый ключ
+      trait: curiosity
+    - key: flower
+      text: Цветок, который никогда не вянет
+      trait: tenderness
+
+- key: night-walk
+  kind: choice
+  text: Куда отправимся этой ночью?
+  options:
+    - key: roof
+      text: На крышу — смотреть на звёзды
+      trait: courage
+    - key: library
+      text: В старую библиотеку
+      trait: curiosity
+
+- key: rainy-evening
+  kind: choice
+  text: Вечер, за окном дождь. Что делаем?
+  options:
+    - key: blankets
+      text: Пледы, чай и сказки
+      trait: tenderness
+    - key: puddles
+      text: Бежим гулять по лужам
+      trait: mischief
+
+- key: wanderer
+  kind: choice
+  text: В дверь гнезда постучался странник в плаще. Как поступим?
+  options:
+    - key: invite
+      text: Пригласим к огню
+      trait: tenderness
+    - key: riddle
+      text: Сначала загадаем загадку
+      trait: mischief
+
+- key: treasure-map
+  kind: choice
+  text: На чердаке нашлась карта с крестиком. Что дальше?
+  options:
+    - key: search
+      text: Идём искать клад
+      trait: courage
+    - key: study
+      text: Сначала разгадаем все пометки
+      trait: curiosity
+
+- key: candle
+  kind: choice
+  text: Какую свечу зажжём сегодня?
+  options:
+    - key: honey
+      text: Медовую — для уюта
+      trait: tenderness
+    - key: green
+      text: Зелёную — для приключений
+      trait: courage

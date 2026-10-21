@@ -45,7 +45,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Me */
+        /**
+         * Me
+         * @description Состояние человека. Заодно назначает послание дня, если пора: оно назначается, когда открывают Гнездо.
+         */
         get: operations["me_api_me_get"];
         put?: never;
         post?: never;
@@ -106,6 +109,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/prompt/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer */
+        post: operations["answer_api_prompt_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/prompt/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Result */
+        post: operations["open_result_api_prompt_reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Subscribe */
+        post: operations["subscribe_api_notifications_push_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/telegram": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Telegram Allowed
+         * @description Mini App получила разрешение (requestWriteAccess): боту снова можно писать этому человеку.
+         */
+        post: operations["telegram_allowed_api_notifications_telegram_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -160,10 +234,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/debug/partner-answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Partner Answer
+         * @description Партнёр отвечает на текущее послание случайным вариантом.
+         */
+        post: operations["partner_answer_api_debug_partner_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/debug/next-day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Next Day
+         * @description Часы пары на день вперёд: если послание раскрыто, придёт новое.
+         */
+        post: operations["next_day_api_debug_next_day_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnswerRequest */
+        AnswerRequest: {
+            /** Session Id */
+            session_id: number;
+            /** Option */
+            option: string;
+        };
         /** ApiError */
         ApiError: {
             /** Detail */
@@ -175,6 +296,29 @@ export interface components {
             debug: boolean;
             /** New Pairs */
             new_pairs: boolean;
+            /** Vapid Public Key */
+            vapid_public_key: string | null;
+        };
+        /** CardView */
+        CardView: {
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "choice";
+            /** Text */
+            text: string;
+            /** Options */
+            options: components["schemas"]["OptionView"][];
+        };
+        /** Choice */
+        Choice: {
+            /** Option */
+            option: string;
+            /** Text */
+            text: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -216,6 +360,27 @@ export interface components {
             name: string;
             pair: components["schemas"]["PairView"] | null;
             pet: components["schemas"]["PetView"] | null;
+            prompt: components["schemas"]["PromptView"] | null;
+            /** Pet Line */
+            pet_line: string | null;
+            notifications: components["schemas"]["NotificationsView"];
+        };
+        /** NotificationsView */
+        NotificationsView: {
+            /**
+             * Telegram
+             * @enum {string}
+             */
+            telegram: "on" | "off" | "unknown";
+            /** Push */
+            push: boolean;
+        };
+        /** OptionView */
+        OptionView: {
+            /** Key */
+            key: string;
+            /** Text */
+            text: string;
         };
         /** PairView */
         PairView: {
@@ -242,6 +407,84 @@ export interface components {
              * Format: date-time
              */
             hatched_at: string;
+            /** Sparks */
+            sparks: number;
+            /** Traits */
+            traits: components["schemas"]["TraitValue"][];
+        };
+        /** PromptView */
+        PromptView: {
+            /** Session Id */
+            session_id: number;
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ASSIGNED" | "WAITING_FOR_PARTNER" | "READY_TO_REVEAL" | "COMPLETED";
+            card: components["schemas"]["CardView"];
+            mine: components["schemas"]["Choice"] | null;
+            /** Reaction */
+            reaction: string | null;
+            /** Answer Sparks */
+            answer_sparks: number | null;
+            /** Partner Answered */
+            partner_answered: boolean;
+            /** Seen */
+            seen: boolean;
+            result: components["schemas"]["ResultView"] | null;
+        };
+        /** PushKeys */
+        PushKeys: {
+            /** P256Dh */
+            p256dh: string;
+            /** Auth */
+            auth: string;
+        };
+        /** PushSubscription */
+        PushSubscription: {
+            /** Endpoint */
+            endpoint: string;
+            keys: components["schemas"]["PushKeys"];
+        };
+        /** ResultView */
+        ResultView: {
+            partner: components["schemas"]["Choice"];
+            /** Same */
+            same: boolean;
+            /** Line */
+            line: string;
+            /** Sparks */
+            sparks: number;
+            /** Traits */
+            traits: components["schemas"]["TraitShift"][];
+        };
+        /** RevealRequest */
+        RevealRequest: {
+            /** Session Id */
+            session_id: number;
+        };
+        /** TraitShift */
+        TraitShift: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Delta */
+            delta: number;
+        };
+        /** TraitValue */
+        TraitValue: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Value */
+            value: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -498,6 +741,196 @@ export interface operations {
             };
         };
     };
+    answer_api_prompt_answer_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_result_api_prompt_reveal_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevealRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subscribe_api_notifications_push_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscription"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    telegram_allowed_api_notifications_telegram_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     login_start_api_auth_login_post: {
         parameters: {
             query?: never;
@@ -570,6 +1003,104 @@ export interface operations {
         };
     };
     stub_partner_api_debug_partner_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    partner_answer_api_debug_partner_answer_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    next_day_api_debug_next_day_post: {
         parameters: {
             query?: never;
             header?: {

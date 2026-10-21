@@ -10,7 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException
 
-from app.http.deps import Conn, Settings, Tg
+from app.http.deps import Conn, Ctx
 from app.http.models import ApiError, LoginConfirm, LoginConfirmResult, LoginExchange, LoginResult, LoginStart
 from app.store import auth, users
 
@@ -18,7 +18,8 @@ router = APIRouter()
 
 
 @router.post("/auth/login", responses={503: {"model": ApiError}})
-async def login_start(conn: Conn, telegram: Tg) -> LoginStart:
+async def login_start(conn: Conn, ctx: Ctx) -> LoginStart:
+    telegram = ctx.telegram
     if telegram.username is None:
         raise HTTPException(503, detail="telegram_off")
     nonce = await auth.create_nonce(conn)
@@ -41,10 +42,10 @@ async def login_exchange(body: LoginExchange, conn: Conn) -> LoginResult:
 async def login_confirm(
     body: LoginConfirm,
     conn: Conn,
-    settings: Settings,
+    ctx: Ctx,
     x_internal_secret: Annotated[str, Header()] = "",
 ) -> LoginConfirmResult:
-    secret = settings.internal_secret
+    secret = ctx.config.internal_secret
     if secret is None or not hmac.compare_digest(x_internal_secret.encode(), secret.get_secret_value().encode()):
         raise HTTPException(403, detail="forbidden")
     await users.ensure(conn, body.user_id, body.name)

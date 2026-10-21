@@ -13,7 +13,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // Service worker регистрирует сам код (main.tsx) и только в режиме PWA.
+      // Свой service worker (src/sw.ts): кеш приложения и web push. Регистрирует его сам код
+      // (main.tsx) и только в режиме PWA.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       injectRegister: false,
       registerType: 'autoUpdate',
       manifest: {
@@ -31,9 +35,8 @@ export default defineConfig({
           { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        navigateFallbackDenylist: [/^\/api\//],
       },
     }),
   ],

@@ -61,4 +61,59 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX outbox_due ON outbox (due_at) WHERE sent_at IS NULL AND failed_at IS NULL;
     """,
+    # 2 — послание дня: ответы, раскрытие, искры, шкалы питомца, web push
+    """
+    CREATE TABLE pair_settings (
+        pair_id bigint NOT NULL REFERENCES pairs (id),
+        key     text NOT NULL,  -- timezone, debug_day_offset
+        value   text NOT NULL,
+        PRIMARY KEY (pair_id, key)
+    );
+
+    ALTER TABLE pets
+        ADD COLUMN curiosity  integer NOT NULL DEFAULT 0,
+        ADD COLUMN mischief   integer NOT NULL DEFAULT 0,
+        ADD COLUMN tenderness integer NOT NULL DEFAULT 0,
+        ADD COLUMN courage    integer NOT NULL DEFAULT 0;
+
+    CREATE TABLE prompt_sessions (
+        id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        pair_id      bigint NOT NULL REFERENCES pairs (id),
+        day          date NOT NULL,  -- день назначения по часам пары
+        prompt_key   text NOT NULL,  -- постоянный ключ карточки из content/prompts.yaml
+        assigned_at  timestamptz NOT NULL DEFAULT now(),
+        completed_at timestamptz,    -- результат открыт: искры и шкалы применены
+        completed_on date,           -- день раскрытия по часам пары: следующее послание — не раньше завтра
+        result       jsonb,          -- снимок раскрытия: что получила пара, его видят оба
+        UNIQUE (pair_id, day)
+    );
+
+    CREATE TABLE answers (
+        session_id     bigint NOT NULL REFERENCES prompt_sessions (id),
+        user_id        bigint NOT NULL REFERENCES users (user_id),
+        answer         text NOT NULL,  -- ключ выбранного варианта
+        created_at     timestamptz NOT NULL DEFAULT now(),
+        result_seen_at timestamptz,    -- человек открыл результат: раскрытие ему больше не проигрывается
+        PRIMARY KEY (session_id, user_id)
+    );
+
+    CREATE TABLE reward_ledger (
+        id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        pair_id    bigint NOT NULL REFERENCES pairs (id),
+        user_id    bigint REFERENCES users (user_id),  -- кто заработал; NULL — вся пара
+        event_key  text NOT NULL UNIQUE,  -- одно событие — одна запись: повтор не начислит второй раз
+        sparks     integer NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX reward_ledger_by_pair ON reward_ledger (pair_id);
+
+    CREATE TABLE push_subs (
+        endpoint   text PRIMARY KEY,
+        user_id    bigint NOT NULL REFERENCES users (user_id),
+        keys       jsonb NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        failed_at  timestamptz  -- служба push ответила 404/410: подписка протухла
+    );
+    CREATE INDEX push_subs_by_user ON push_subs (user_id) WHERE failed_at IS NULL;
+    """,
 ]

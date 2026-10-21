@@ -190,3 +190,50 @@ p {
   font-size: 20px;
   cursor: pointer;
 }
+
+.back {
+  align-self: flex-start;
+  padding: 0;
+  text-decoration: none;
+}
+
+.bubble {
+  position: relative;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  line-height: 1.4;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.option {
+  min-height: 52px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.option.selected {
+  border-color: var(--candle);
+  box-shadow: inset 0 0 0 1px var(--candle);
+}
+
+.reward {
+  color: var(--candle);
+  font-weight: 600;
+}
+
+.center-text {
+  text-align: center;
+}

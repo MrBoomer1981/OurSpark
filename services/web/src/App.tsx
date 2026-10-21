@@ -5,8 +5,10 @@ import { DebugPanel } from './debug/DebugPanel';
 import { launch } from './platform';
 import { credentials } from './platform/credentials';
 import { Login } from './screens/Login';
+import { Message } from './screens/Message';
 import { Nest, type InviteProblem } from './screens/Nest';
 import { Notice } from './screens/Notice';
+import { Result } from './screens/Result';
 import { texts } from './texts';
 
 type View =
@@ -16,9 +18,13 @@ type View =
   | { kind: 'login' } // PWA без сессии
   | { kind: 'nest'; me: Me };
 
+// Главный путь ведёт к посланию; «Послание» и «Результат» — вторичные экраны с кнопкой «назад».
+type Screen = 'nest' | 'message' | 'result';
+
 export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [view, setView] = useState<View>({ kind: 'loading' });
+  const [screen, setScreen] = useState<Screen>('nest');
   const [invite, setInvite] = useState<InviteProblem | null>(null);
 
   const unauthorized = useCallback(() => {
@@ -43,6 +49,7 @@ export function App() {
 
   const boot = useCallback(async () => {
     setView({ kind: 'loading' });
+    setScreen('nest');
     const settings = await call(api.GET('/api/config'));
     if (!settings.ok) {
       setView({ kind: 'offline' });
@@ -77,14 +84,41 @@ export function App() {
   }, [config, refresh]);
 
   const showMe = useCallback((me: Me) => setView({ kind: 'nest', me }), []);
+  const toNest = useCallback(() => setScreen('nest'), []);
 
-  return (
-    <>
-      {view.kind === 'loading' && <Notice text={texts.loading} />}
-      {view.kind === 'offline' && <Notice text={texts.offline} action={{ label: texts.retry, onClick: () => void boot() }} />}
-      {view.kind === 'reopen' && <Notice text={texts.reopen} />}
-      {view.kind === 'login' && config && <Login config={config} onLoggedIn={() => void boot()} />}
-      {view.kind === 'nest' && config && (
+  const me = view.kind === 'nest' ? view.me : null;
+  const sessionId = me?.prompt?.session_id;
+
+  /** «Открыть результат»: раскрытие на сервере, потом экран результата. */
+  const reveal = useCallback(async () => {
+    if (sessionId === undefined) return;
+    const result = await call(api.POST('/api/prompt/reveal', { body: { session_id: sessionId } }));
+    if (result.ok) {
+      showMe(result.data);
+      setScreen('result');
+    } else if (result.status === 401) {
+      unauthorized();
+    } else {
+      setScreen('nest');
+      await refresh();
+    }
+  }, [sessionId, showMe, unauthorized, refresh]);
+
+  let content = null;
+  if (view.kind === 'loading') content = <Notice text={texts.loading} />;
+  else if (view.kind === 'offline') content = <Notice text={texts.offline} action={{ label: texts.retry, onClick: () => void boot() }} />;
+  else if (view.kind === 'reopen') content = <Notice text={texts.reopen} />;
+  else if (view.kind === 'login' && config) content = <Login config={config} onLoggedIn={() => void boot()} />;
+  else if (view.kind === 'nest' && config) {
+    const prompt = view.me.prompt;
+    if (screen === 'message' && prompt) {
+      content = (
+        <Message prompt={prompt} onMe={showMe} onUnauthorized={unauthorized} onReveal={() => void reveal()} onBack={toNest} />
+      );
+    } else if (screen === 'result' && prompt?.result) {
+      content = <Result me={view.me} onBack={toNest} />;
+    } else {
+      content = (
         <Nest
           me={view.me}
           config={config}
@@ -92,16 +126,18 @@ export function App() {
           onMe={showMe}
           onInvite={setInvite}
           onUnauthorized={unauthorized}
+          onOpenMessage={() => setScreen('message')}
+          onReveal={() => void reveal()}
+          onShowResult={() => setScreen('result')}
         />
-      )}
-      {config?.debug && (
-        <DebugPanel
-          me={view.kind === 'nest' ? view.me : null}
-          onMe={showMe}
-          onUnauthorized={unauthorized}
-          onSwitch={() => void boot()}
-        />
-      )}
+      );
+    }
+  }
+
+  return (
+    <>
+      {content}
+      {config?.debug && <DebugPanel me={me} onMe={showMe} onUnauthorized={unauthorized} onSwitch={() => void boot()} />}
     </>
   );
 }

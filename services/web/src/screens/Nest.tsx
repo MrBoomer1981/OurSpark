@@ -6,11 +6,13 @@ import { copyText, shareLink } from '../platform/share';
 import { errorText, texts } from '../texts';
 import { Confirm } from '../ui/Confirm';
 import { InstallOffer } from '../ui/InstallOffer';
+import { NotificationsBanner } from '../ui/NotificationsBanner';
 
 /** Приглашение, по которому Mini App открыли, не сработало: код и причина от api. */
 export type InviteProblem = { code: string; problem: string };
 
 type Pair = NonNullable<Me['pair']>;
+type Prompt = NonNullable<Me['prompt']>;
 
 type Props = {
   me: Me;
@@ -19,10 +21,14 @@ type Props = {
   onMe: (me: Me) => void;
   onInvite: (invite: InviteProblem | null) => void;
   onUnauthorized: () => void;
+  onOpenMessage: () => void;
+  onReveal: () => void;
+  onShowResult: () => void;
 };
 
-/** Гнездо: нет пары → ждём партнёра → пара в сборе и питомец. */
-export function Nest({ me, config, invite, onMe, onInvite, onUnauthorized }: Props) {
+/** Гнездо: нет пары → ждём партнёра → пара в сборе: питомец и послание дня. */
+export function Nest(props: Props) {
+  const { me, config, invite, onMe, onInvite, onUnauthorized } = props;
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -75,7 +81,19 @@ export function Nest({ me, config, invite, onMe, onInvite, onUnauthorized }: Pro
       ) : me.pair.status === 'waiting' ? (
         <Waiting pair={me.pair} busy={busy} onCancel={() => void leave()} />
       ) : (
-        <Together pair={me.pair} busy={busy} onLeave={() => void leave()} />
+        <>
+          <Together me={me} pair={me.pair} />
+          {me.prompt && <PromptStatus prompt={me.prompt} {...props} />}
+          <NotificationsBanner me={me} config={config} onMe={onMe} />
+          <Confirm
+            label={texts.complete.leave}
+            question={texts.complete.leaveConfirm}
+            yes={texts.complete.leaveYes}
+            no={texts.complete.leaveNo}
+            busy={busy}
+            onConfirm={() => void leave()}
+          />
+        </>
       )}
       {message && <p className="message">{message}</p>}
       <InstallOffer />
@@ -143,25 +161,66 @@ function Waiting({ pair, busy, onCancel }: { pair: Pair; busy: boolean; onCancel
   );
 }
 
-function Together({ pair, busy, onLeave }: { pair: Pair; busy: boolean; onLeave: () => void }) {
+function Together({ me, pair }: { me: Me; pair: Pair }) {
+  const traits = (me.pet?.traits ?? []).filter((trait) => trait.value > 0);
   return (
-    <>
-      <section className="nest">
-        <PetView sprite="pet.hatchling" />
-        <p>
-          {texts.complete.together} <b>{pair.partner?.name}</b>
+    <section className="nest">
+      <PetView sprite="pet.hatchling" />
+      {me.pet_line && <p className="bubble">{me.pet_line}</p>}
+      <p className="small">
+        {texts.complete.together} <b>{pair.partner?.name}</b>
+      </p>
+      {me.pet && (
+        <p className="muted small">
+          {[texts.complete.sparks(me.pet.sparks), ...traits.map((t) => `${t.name} ${t.value}`)].join(' · ')}
         </p>
-        <p className="muted">{texts.complete.hatched}</p>
+      )}
+    </section>
+  );
+}
+
+type PromptStatusProps = { prompt: Prompt; onOpenMessage: () => void; onReveal: () => void; onShowResult: () => void };
+
+function PromptStatus({ prompt, onOpenMessage, onReveal, onShowResult }: PromptStatusProps) {
+  if (prompt.state === 'ASSIGNED') {
+    return (
+      <section className="card">
+        <h2>{texts.prompt.title}</h2>
+        {prompt.partner_answered && <p className="muted">{texts.prompt.partnerAnswered}</p>}
+        <button className="button" onClick={onOpenMessage}>
+          {texts.prompt.answer}
+        </button>
       </section>
-      <Confirm
-        label={texts.complete.leave}
-        question={texts.complete.leaveConfirm}
-        yes={texts.complete.leaveYes}
-        no={texts.complete.leaveNo}
-        busy={busy}
-        onConfirm={onLeave}
-      />
-    </>
+    );
+  }
+  if (prompt.state === 'WAITING_FOR_PARTNER') {
+    return (
+      <section className="card">
+        <h2>{texts.prompt.waitingTitle}</h2>
+        <p className="muted">
+          {texts.prompt.yourChoice}: <b>{prompt.mine?.text}</b>
+        </p>
+      </section>
+    );
+  }
+  if (prompt.state === 'READY_TO_REVEAL' || !prompt.seen) {
+    return (
+      <section className="card">
+        <h2>{texts.prompt.readyTitle}</h2>
+        <button className="button" onClick={onReveal}>
+          {texts.prompt.reveal}
+        </button>
+      </section>
+    );
+  }
+  return (
+    <section className="card">
+      <h2>{texts.prompt.doneTitle}</h2>
+      <p className="muted">{texts.prompt.tomorrow}</p>
+      <button className="link" onClick={onShowResult}>
+        {texts.prompt.showResult}
+      </button>
+    </section>
   );
 }
 

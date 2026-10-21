@@ -1,17 +1,17 @@
-"""Зависимости маршрутов: соединение с базой, конфиг, клиент Telegram и вошедший человек."""
+"""Зависимости маршрутов: соединение с базой, контекст и вошедший человек."""
 
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from typing import Annotated
 
 import asyncpg
 from fastapi import Depends, Header, HTTPException, Request
 
 from app import texts
-from app.config import Config
+from app.context import Context
 from app.store import auth, users
 from app.store.users import User
 from app.telegram import init_data
-from app.telegram.client import Telegram
 
 
 async def _connection(request: Request) -> AsyncIterator[asyncpg.Connection]:
@@ -19,35 +19,36 @@ async def _connection(request: Request) -> AsyncIterator[asyncpg.Connection]:
         yield conn
 
 
-def _config(request: Request) -> Config:
-    return request.app.state.config
-
-
-def _telegram(request: Request) -> Telegram:
-    return request.app.state.telegram
+def _context(request: Request) -> Context:
+    return request.app.state.ctx
 
 
 Conn = Annotated[asyncpg.Connection, Depends(_connection)]
-Settings = Annotated[Config, Depends(_config)]
-Tg = Annotated[Telegram, Depends(_telegram)]
+Ctx = Annotated[Context, Depends(_context)]
 
 
-async def _current_user(conn: Conn, settings: Settings, authorization: Annotated[str, Header()] = "") -> User:
+async def _current_user(conn: Conn, ctx: Ctx, authorization: Annotated[str, Header()] = "") -> User:
     """Кто делает запрос, решает только сервер: подпись Telegram, токен сессии или (с DEBUG) подставной id."""
+    config = ctx.config
     scheme, _, credentials = authorization.partition(" ")
-    if scheme == "tma" and settings.bot_token is not None:
+    if scheme == "tma" and config.bot_token is not None:
         try:
-            tg_user = init_data.check(credentials, settings.bot_token.get_secret_value())
+            tg_user = init_data.check(credentials, config.bot_token.get_secret_value())
         except init_data.InitDataError as error:
             raise HTTPException(401, detail=f"init_data_{error.reason}") from error
-        return await users.ensure(conn, tg_user.id, tg_user.first_name)
+        user = await users.ensure(conn, tg_user.id, tg_user.first_name)
+        # Telegram говорит, что боту можно писать этому человеку, — канал рабочий.
+        if tg_user.allows_write_to_pm and user.tg_reachable is not True:
+            await users.set_reachable(conn, user.id, True)
+            user = replace(user, tg_reachable=True)
+        return user
     if scheme == "Bearer":
         user_id = await auth.session_user(conn, credentials)
-        user = await users.get(conn, user_id) if user_id is not None else None
-        if user is None:
+        found = await users.get(conn, user_id) if user_id is not None else None
+        if found is None:
             raise HTTPException(401, detail="session_invalid")
-        return user
-    if scheme == "debug" and settings.debug:
+        return found
+    if scheme == "debug" and config.debug:
         # Только отрицательные id: в Telegram таких нет, поэтому настоящего человека так не подделать.
         try:
             user_id = int(credentials)
