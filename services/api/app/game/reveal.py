@@ -42,11 +42,13 @@ async def _apply(
     card = content.cards[session.prompt_key]
     options = []
     for answer in answers.values():
+        if answer.answer is None:
+            continue  # ответ текстом (о близости): шкал не двигает
         option = card.option(answer.answer)
         if option is None:
             raise ValueError(f"в карточке {card.key} нет варианта {answer.answer}: ключи вариантов менять нельзя")
         options.append(option)
-    deltas = Counter(option.trait for option in options)
+    deltas = Counter(option.trait for option in options if option.trait is not None)
     await rewards.for_reveal(conn, pair_id, session.id)
     await pet.shift(conn, pair_id, deltas)
 
@@ -66,7 +68,8 @@ async def _apply(
         await chronicle.write(conn, pair_id, f"relic:{card.theme}", chronicle.RELIC, theme=card.theme)
 
     # Совпавший выбор попадает в летопись, только если для варианта задана запись.
-    page = len({option.key for option in options}) == 1 and options[0].chronicle is not None
+    same = len(options) == PAIR_SIZE and len({option.key for option in options}) == 1
+    page = same and options[0].chronicle is not None
     if page:
         await chronicle.write(
             conn, pair_id, f"choice:{session.id}", chronicle.CHOICE, prompt=card.key, option=options[0].key

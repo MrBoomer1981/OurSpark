@@ -281,6 +281,30 @@ p {
   padding-left: 20px;
 }
 
+.textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 120px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.counter {
+  align-self: flex-end;
+}
+
+.quote {
+  padding: 6px 0 6px 12px;
+  border-left: 2px solid var(--line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .list.plain {
   padding-left: 0;
   list-style: none;

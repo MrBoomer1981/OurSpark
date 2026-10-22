@@ -2,15 +2,23 @@
 #
 # Ключ карточки и ключи вариантов постоянные: после первого показа их не меняют и карточки
 # не удаляют — по ключам база помнит ответы и завершённые послания. Текст править можно.
-# Тексты: никаких родовых окончаний у участников («выбрал(а)» нельзя), имена — в именительном падеже.
+# Тексты: никаких родовых окончаний у участников («выбрал(а)», «хотел(а) бы», «готов(а)» нельзя —
+# годятся настоящее и будущее время, «хочется», «тебе ближе»), имена — в именительном падеже.
+# Не тест и не диагностика отношений: никаких «правильных» ответов и давления на откровенность.
 # Текст с двоеточием берите в кавычки, иначе YAML прочтёт его не как текст.
 #
-# kind: choice — совместный выбор: каждый выбирает вариант, результат открывается после ответа обоих.
+# kind — тип; доли, с которыми типы выпадают, заданы в коде (app/content: KINDS):
+#   light — лёгкий: каждый выбирает вариант о себе;
+#   closeness — о близости: каждый отвечает текстом; вариантов нет, шкалы не двигает;
+#   guess — «Угадай партнёра»: каждый выбирает вариант о себе и прогноз варианта партнёра;
+#   choice — совместный выбор: каждый выбирает вариант за пару; шкала нужна у каждого варианта.
 # theme — тема из themes.yaml: три завершённых послания одной темы приносят паре её реликвию.
-# trait — шкала питомца, которую сдвигает вариант (ключ из pet.yaml).
+# trait — шкала питомца, которую сдвигает вариант (ключ из pet.yaml); у лёгких и «Угадай» — по желанию.
 # chronicle — запись летописи на случай, когда вариант выбрали оба; без неё совпадение в летопись не попадает.
 #
-# Черновики; библиотека из 60–80 карточек всех типов — этап 4.
+# Черновики Claude — автор проекта их правит.
+
+# --- Уют ---
 
 - key: nest-key-or-flower
   kind: choice
@@ -26,20 +34,6 @@
       trait: tenderness
       chronicle: Вы выбрали цветок, который никогда не вянет. Теперь я храню его рядом с кроватью.
 
-- key: night-walk
-  kind: choice
-  theme: adventure
-  text: Куда отправимся этой ночью?
-  options:
-    - key: roof
-      text: На крышу — смотреть на звёзды
-      trait: courage
-      chronicle: Ночь на крыше. Звёзд было больше, чем перьев в гнезде.
-    - key: library
-      text: В старую библиотеку
-      trait: curiosity
-      chronicle: Ночь в старой библиотеке. Одна книга теперь живёт в гнезде.
-
 - key: rainy-evening
   kind: choice
   theme: home
@@ -53,6 +47,92 @@
       text: Бежим гулять по лужам
       trait: mischief
       chronicle: Прогулка по лужам. Перья сохли до самого утра.
+
+- key: candle
+  kind: choice
+  theme: home
+  text: Какую свечу зажжём сегодня?
+  options:
+    - key: honey
+      text: Медовую — для уюта
+      trait: tenderness
+      chronicle: Медовая свеча горела весь вечер. В гнезде до сих пор пахнет мёдом.
+    - key: green
+      text: Зелёную — для приключений
+      trait: courage
+      chronicle: Зелёная свеча зажжена — к приключениям. Посмотрим, каким.
+
+- key: home-sound
+  kind: light
+  theme: home
+  text: Какой звук делает дом по-настоящему уютным?
+  options:
+    - key: rain
+      text: Дождь по крыше
+      trait: tenderness
+    - key: fire
+      text: Треск огня в камине
+      trait: courage
+    - key: pages
+      text: Шелест страниц
+      trait: curiosity
+    - key: laughter
+      text: Смех на кухне
+      trait: mischief
+
+- key: home-evening
+  kind: guess
+  theme: home
+  text: Идеальный вечер дома — это…
+  options:
+    - key: film
+      text: Фильм под пледом
+      trait: tenderness
+    - key: game
+      text: Настольная игра
+      trait: mischief
+    - key: cooking
+      text: Приготовить что-то новое
+      trait: curiosity
+
+- key: home-reminder
+  kind: closeness
+  theme: home
+  text: Какая вещь у тебя дома напоминает о нас?
+
+- key: home-corner
+  kind: light
+  theme: home
+  text: Какой уголок гнезда займёшь?
+  options:
+    - key: window
+      text: Подоконник с подушками
+      trait: curiosity
+    - key: hammock
+      text: Гамак под самым потолком
+      trait: mischief
+    - key: armchair
+      text: Кресло у огня
+      trait: tenderness
+    - key: hatch
+      text: Люк на крышу
+      trait: courage
+
+# --- Приключения ---
+
+- key: night-walk
+  kind: choice
+  theme: adventure
+  text: Куда отправимся этой ночью?
+  options:
+    - key: roof
+      text: На крышу — смотреть на звёзды
+      trait: courage
+      chronicle: Ночь на крыше. Звёзд было больше, чем перьев в гнезде.
+    - key: library
+      text: В старую библиотеку
+      trait: curiosity
+      chronicle: Ночь в старой библиотеке. Одна книга теперь живёт в гнезде.
 
 - key: wanderer
   kind: choice
@@ -82,16 +162,826 @@
       trait: curiosity
       chronicle: Все пометки на карте разгаданы. Одна из них — про это гнездо.
 
-- key: candle
-  kind: choice
-  theme: home
-  text: Какую свечу зажжём сегодня?
+- key: adventure-transport
+  kind: light
+  theme: adventure
+  text: На чём отправимся в путешествие?
   options:
-    - key: honey
-      text: Медовую — для уюта
-      trait: tenderness
-      chronicle: Медовая свеча горела весь вечер. В гнезде до сих пор пахнет мёдом.
-    - key: green
-      text: Зелёную — для приключений
+    - key: balloon
+      text: На воздушном шаре
       trait: courage
-      chronicle: Зелёная свеча зажжена — к приключениям. Посмотрим, каким.
+    - key: train
+      text: На ночном поезде
+      trait: tenderness
+    - key: ship
+      text: На старом паруснике
+      trait: curiosity
+    - key: broom
+      text: На метле — так быстрее
+      trait: mischief
+
+- key: adventure-pack
+  kind: guess
+  theme: adventure
+  text: Что положишь в рюкзак первым делом?
+  options:
+    - key: map
+      text: Карту
+      trait: curiosity
+    - key: snacks
+      text: Запас вкусностей
+      trait: mischief
+    - key: blanket
+      text: Тёплый плед
+      trait: tenderness
+    - key: knife
+      text: Складной нож
+      trait: courage
+
+- key: adventure-place
+  kind: closeness
+  theme: adventure
+  text: Куда тебе хочется однажды поехать вместе — и почему именно туда?
+
+- key: adventure-door
+  kind: light
+  theme: adventure
+  text: В гнезде нашлась дверь, которой вчера не было. Что делаем?
+  options:
+    - key: open
+      text: Открываем сразу
+      trait: courage
+    - key: knock
+      text: Вежливо стучим
+      trait: tenderness
+    - key: peek
+      text: Смотрим в замочную скважину
+      trait: curiosity
+    - key: sign
+      text: Вешаем табличку «Не входить» и ждём, что будет
+      trait: mischief
+
+# --- Воспоминания ---
+
+- key: memory-moment
+  kind: closeness
+  theme: memories
+  text: Какой наш момент ты иногда вспоминаешь без повода?
+
+- key: memory-first
+  kind: closeness
+  theme: memories
+  text: Что тебе запомнилось из нашей первой переписки или встречи?
+
+- key: memory-box
+  kind: light
+  theme: memories
+  text: Какое воспоминание положить в шкатулку гнезда?
+  options:
+    - key: laughter
+      text: Как мы смеялись до слёз
+      trait: mischief
+    - key: trip
+      text: Нашу первую поездку
+      trait: courage
+    - key: quiet
+      text: Тихий вечер, когда никуда не надо было спешить
+      trait: tenderness
+    - key: discovery
+      text: День, когда мы узнали друг о друге что-то новое
+      trait: curiosity
+
+- key: memory-rewatch
+  kind: guess
+  theme: memories
+  text: Что приятнее пересматривать?
+  options:
+    - key: messages
+      text: Нашу старую переписку
+      trait: tenderness
+    - key: photos
+      text: Наши фотографии
+      trait: curiosity
+    - key: videos
+      text: Смешные видео
+      trait: mischief
+
+- key: memory-smell
+  kind: light
+  theme: memories
+  text: Какой запах возвращает тебя в детство?
+  options:
+    - key: pastry
+      text: Свежая выпечка
+      trait: tenderness
+    - key: asphalt
+      text: Мокрый асфальт после дождя
+      trait: curiosity
+    - key: tangerines
+      text: Хвоя и мандарины
+      trait: mischief
+    - key: bonfire
+      text: Дым костра
+      trait: courage
+
+- key: memory-joke
+  kind: closeness
+  theme: memories
+  text: Какая наша общая шутка до сих пор тебя смешит?
+
+- key: memory-keepsake
+  kind: closeness
+  theme: memories
+  text: Какую мелочь, связанную с нами, ты хранишь — и почему именно её?
+
+# --- Забота ---
+
+- key: care-small-act
+  kind: closeness
+  theme: care
+  text: Какой маленький поступок помогает тебе почувствовать заботу?
+
+- key: care-hard-day
+  kind: closeness
+  theme: care
+  text: Что тебе хочется услышать от меня в трудный день?
+
+- key: care-message
+  kind: closeness
+  theme: care
+  text: Какое сообщение от меня приятнее всего получить посреди дня?
+
+- key: care-way
+  kind: guess
+  theme: care
+  text: Как приятнее всего получать заботу?
+  options:
+    - key: words
+      text: Тёплыми словами
+      trait: tenderness
+    - key: help
+      text: Помощью с делами
+      trait: courage
+    - key: surprise
+      text: Маленьким сюрпризом
+      trait: mischief
+    - key: letter
+      text: Длинным письмом
+      trait: curiosity
+
+- key: care-cold
+  kind: light
+  theme: care
+  text: Простуда. Чем лечимся?
+  options:
+    - key: tea
+      text: Чаем с мёдом и малиной
+      trait: tenderness
+    - key: series
+      text: Сериалом на весь день
+      trait: mischief
+    - key: walk
+      text: Прогулкой — свежий воздух лечит
+      trait: courage
+    - key: book
+      text: Толстой книгой под одеялом
+      trait: curiosity
+
+- key: care-morning
+  kind: light
+  theme: care
+  text: С чего начинается идеальное утро?
+  options:
+    - key: coffee
+      text: С кофе
+      trait: courage
+    - key: hug
+      text: С объятий
+      trait: tenderness
+    - key: silence
+      text: С тишины
+      trait: curiosity
+    - key: music
+      text: С громкой музыки
+      trait: mischief
+
+- key: care-guard
+  kind: choice
+  theme: care
+  text: Кто будет охранять гнездо, пока нас нет?
+  options:
+    - key: owl
+      text: Сова-сторож
+      trait: curiosity
+      chronicle: По ночам гнездо стережёт сова. Она очень серьёзная и всё записывает.
+    - key: cat
+      text: Чёрный кот
+      trait: mischief
+      chronicle: В гнезде поселился чёрный кот-сторож. Сторожит в основном подушки.
+    - key: scarecrow
+      text: Пугало в плаще
+      trait: courage
+      chronicle: У гнезда встало пугало в плаще. Пугает всех ворон, кроме меня.
+
+# --- Мечты ---
+
+- key: dream-power
+  kind: light
+  theme: dreams
+  text: Какую суперсилу взять себе?
+  options:
+    - key: fly
+      text: Летать
+      trait: courage
+    - key: invisible
+      text: Становиться невидимкой
+      trait: mischief
+    - key: animals
+      text: Понимать язык животных
+      trait: curiosity
+    - key: heal
+      text: Исцелять прикосновением
+      trait: tenderness
+
+- key: dream-home
+  kind: guess
+  theme: dreams
+  text: Где тебе больше хочется жить?
+  options:
+    - key: sea
+      text: У моря
+      trait: tenderness
+    - key: mountains
+      text: В горах
+      trait: courage
+    - key: city
+      text: В большом городе
+      trait: curiosity
+    - key: forest
+      text: В домике в лесу
+      trait: mischief
+
+- key: dream-small
+  kind: closeness
+  theme: dreams
+  text: Какую маленькую мечту хочется исполнить в этом году?
+
+- key: dream-first-time
+  kind: closeness
+  theme: dreams
+  text: Что тебе хочется однажды попробовать вместе — впервые?
+
+- key: dream-star
+  kind: closeness
+  theme: dreams
+  text: Падает звезда. Какое желание загадаешь?
+
+- key: dream-time-machine
+  kind: light
+  theme: dreams
+  text: Машина времени работает один раз. Куда?
+  options:
+    - key: past
+      text: В прошлое — к динозаврам
+      trait: courage
+    - key: future
+      text: В будущее — подсмотреть, что будет
+      trait: curiosity
+    - key: our-day
+      text: В наш лучший день — прожить его ещё раз
+      trait: tenderness
+    - key: nowhere
+      text: Никуда — здесь интереснее
+      trait: mischief
+
+- key: dream-skill
+  kind: closeness
+  theme: dreams
+  text: Чему тебе хочется научиться в этом году?
+
+# --- Вкусы ---
+
+- key: taste-drink
+  kind: guess
+  theme: tastes
+  text: Чай, кофе или какао?
+  options:
+    - key: tea
+      text: Чай
+      trait: tenderness
+    - key: coffee
+      text: Кофе
+      trait: courage
+    - key: cocoa
+      text: Какао с зефирками
+      trait: mischief
+
+- key: taste-breakfast
+  kind: light
+  theme: tastes
+  text: Завтрак мечты — какой?
+  options:
+    - key: pancakes
+      text: Блинчики со сгущёнкой
+      trait: tenderness
+    - key: eggs
+      text: Яичница с беконом
+      trait: courage
+    - key: croissant
+      text: Круассан в маленьком кафе
+      trait: curiosity
+    - key: cake
+      text: Торт — почему бы и нет
+      trait: mischief
+
+- key: taste-childhood
+  kind: closeness
+  theme: tastes
+  text: Какое блюдо из твоего детства хочется однажды приготовить для меня?
+
+- key: taste-sweet-salty
+  kind: light
+  theme: tastes
+  text: Сладкое или солёное?
+  options:
+    - key: sweet
+      text: Сладкое
+      trait: tenderness
+    - key: salty
+      text: Солёное
+      trait: courage
+    - key: caramel
+      text: "Солёная карамель: и то и другое"
+      trait: mischief
+
+- key: taste-picnic
+  kind: light
+  theme: tastes
+  text: Без чего пикник — не пикник?
+  options:
+    - key: berries
+      text: Без корзинки ягод
+      trait: tenderness
+    - key: sandwiches
+      text: Без бутербродов-великанов
+      trait: courage
+    - key: thermos
+      text: Без термоса с чаем
+      trait: curiosity
+    - key: cake
+      text: Без торта со свечками без повода
+      trait: mischief
+
+- key: taste-spice
+  kind: guess
+  theme: tastes
+  text: Насколько острую еду ты любишь?
+  options:
+    - key: mild
+      text: Совсем не острую
+      trait: tenderness
+    - key: medium
+      text: Чуть-чуть
+      trait: curiosity
+    - key: hot
+      text: Чем острее, тем лучше
+      trait: courage
+
+- key: taste-holiday
+  kind: light
+  theme: tastes
+  text: Какой праздник самый вкусный?
+  options:
+    - key: new-year
+      text: Новый год
+      trait: tenderness
+    - key: birthday
+      text: День рождения
+      trait: mischief
+    - key: summer
+      text: Любой летний день с ягодами
+      trait: curiosity
+    - key: may
+      text: Майские с шашлыками
+      trait: courage
+
+# --- Сказки ---
+
+- key: tale-creature
+  kind: light
+  theme: tales
+  text: Какое волшебное существо поселить под крышей?
+  options:
+    - key: dragon
+      text: Маленького дракона
+      trait: courage
+    - key: brownie
+      text: Домового
+      trait: tenderness
+    - key: fairy
+      text: Фею-светлячка
+      trait: curiosity
+    - key: imp
+      text: Проказливого бесёнка
+      trait: mischief
+
+- key: tale-potion
+  kind: choice
+  theme: tales
+  text: Какое зелье сварим в котле?
+  options:
+    - key: dreams
+      text: Зелье сладких снов
+      trait: tenderness
+      chronicle: Зелье сладких снов сварено. Пахнет лавандой и немного — перьями.
+    - key: courage
+      text: Зелье храбрости
+      trait: courage
+      chronicle: Зелье храбрости булькает в котле. Глоток — и не страшно даже к дракону в гости.
+    - key: laughter
+      text: Зелье смеха
+      trait: mischief
+      chronicle: Зелье смеха готово. От одной капли я икаю смешинками.
+
+- key: tale-item
+  kind: guess
+  theme: tales
+  text: Что возьмёшь с собой в сказку?
+  options:
+    - key: sword
+      text: Меч
+      trait: courage
+    - key: book
+      text: Книгу заклинаний
+      trait: curiosity
+    - key: cloak
+      text: Плащ-невидимку
+      trait: mischief
+    - key: lantern
+      text: Фонарь, который не гаснет
+      trait: tenderness
+
+- key: tale-childhood
+  kind: closeness
+  theme: tales
+  text: Какая сказка из детства до сих пор тебе нравится — и чем?
+
+- key: tale-castle
+  kind: light
+  theme: tales
+  text: Замок для нашего гнезда — какой?
+  options:
+    - key: ice
+      text: Ледяной
+      trait: courage
+    - key: cloud
+      text: На облаке
+      trait: curiosity
+    - key: gingerbread
+      text: Пряничный
+      trait: mischief
+    - key: ivy
+      text: Увитый плющом
+      trait: tenderness
+
+- key: tale-familiar
+  kind: guess
+  theme: tales
+  text: Какой фамильяр тебе подходит?
+  options:
+    - key: cat
+      text: Чёрный кот
+      trait: mischief
+    - key: owl
+      text: Сова
+      trait: curiosity
+    - key: raven
+      text: Ворон, конечно
+      trait: courage
+    - key: toad
+      text: Добрая жаба
+      trait: tenderness
+
+- key: tale-spell
+  kind: choice
+  theme: tales
+  text: Какое заклинание наложим на гнездо?
+  options:
+    - key: warmth
+      text: Чтобы в нём всегда было тепло
+      trait: tenderness
+      chronicle: Заклинание тепла наложено. Теперь в гнезде не мёрзнут даже лапы.
+    - key: hidden
+      text: Чтобы его видели только мы
+      trait: mischief
+      chronicle: Заклинание невидимости наложено. Гнездо видно только вам — и мне.
+    - key: music
+      text: Чтобы в нём тихонько играла музыка
+      trait: curiosity
+      chronicle: Заклинание музыки наложено. По вечерам гнездо напевает себе под нос.
+
+# --- На расстоянии ---
+
+- key: distance-evening
+  kind: guess
+  theme: distance
+  text: Как лучше всего провести вечер на расстоянии?
+  options:
+    - key: call
+      text: Видеозвонок до поздней ночи
+      trait: tenderness
+    - key: movie
+      text: Смотреть один фильм одновременно
+      trait: mischief
+    - key: game
+      text: Сыграть во что-нибудь онлайн
+      trait: courage
+    - key: letters
+      text: Переписываться без спешки
+      trait: curiosity
+
+- key: distance-miss
+  kind: closeness
+  theme: distance
+  text: По чему ты скучаешь больше всего, когда мы далеко?
+
+- key: distance-meeting
+  kind: closeness
+  theme: distance
+  text: Что хочется сделать в первые десять минут нашей встречи?
+
+- key: distance-parcel
+  kind: light
+  theme: distance
+  text: Какую посылку приятнее всего получить?
+  options:
+    - key: sweets
+      text: Коробку сладостей
+      trait: mischief
+    - key: hoodie
+      text: Толстовку, которая пахнет домом
+      trait: tenderness
+    - key: book
+      text: Книгу с пометками на полях
+      trait: curiosity
+    - key: ticket
+      text: Билет на встречу
+      trait: courage
+
+- key: distance-post
+  kind: choice
+  theme: distance
+  text: Как будем отправлять письма из гнезда?
+  options:
+    - key: raven
+      text: Вороньей почтой
+      trait: courage
+      chronicle: Воронья почта открыта. Главный почтальон — я, и к работе я отношусь очень серьёзно.
+    - key: bottle
+      text: В бутылке по реке
+      trait: curiosity
+      chronicle: Первое письмо в бутылке уплыло по реке. Куда приплывёт — узнаем.
+    - key: kite
+      text: На бумажном змее
+      trait: mischief
+      chronicle: Письмо улетело на бумажном змее. Ветер обещал доставить в целости.
+
+- key: distance-road
+  kind: light
+  theme: distance
+  text: Чем занять долгую дорогу друг к другу?
+  options:
+    - key: music
+      text: Музыкой в наушниках
+      trait: mischief
+    - key: book
+      text: Книгой
+      trait: curiosity
+    - key: sleep
+      text: Сном — так быстрее
+      trait: tenderness
+    - key: plans
+      text: Планами на встречу
+      trait: courage
+
+- key: distance-ritual
+  kind: closeness
+  theme: distance
+  text: Какой маленький ритуал помогает тебе чувствовать, что я рядом?
+
+# --- Времена года ---
+
+- key: season-favorite
+  kind: guess
+  theme: seasons
+  text: Какое время года твоё?
+  options:
+    - key: winter
+      text: Зима
+      trait: tenderness
+    - key: spring
+      text: Весна
+      trait: curiosity
+    - key: summer
+      text: Лето
+      trait: courage
+    - key: autumn
+      text: Осень
+      trait: mischief
+
+- key: season-snow
+  kind: light
+  theme: seasons
+  text: Выпал первый снег. Что делаем?
+  options:
+    - key: snowman
+      text: Лепим снеговика
+      trait: curiosity
+    - key: snowball
+      text: Устраиваем снежный бой
+      trait: mischief
+    - key: walk
+      text: Гуляем до темноты
+      trait: courage
+    - key: window
+      text: Смотрим из окна с какао
+      trait: tenderness
+
+- key: season-us
+  kind: closeness
+  theme: seasons
+  text: Какое время года напоминает тебе о нас — и почему?
+
+- key: season-summer-night
+  kind: light
+  theme: seasons
+  text: Где провести летнюю ночь?
+  options:
+    - key: roof
+      text: На крыше под звёздами
+      trait: curiosity
+    - key: lake
+      text: У озера с костром
+      trait: courage
+    - key: city
+      text: В ночном городе
+      trait: mischief
+    - key: balcony
+      text: На балконе с чаем
+      trait: tenderness
+
+- key: season-tradition
+  kind: closeness
+  theme: seasons
+  text: Какую традицию тебе хочется завести вместе?
+
+- key: season-weather
+  kind: guess
+  theme: seasons
+  text: Какая погода лучше всего подходит для прогулки?
+  options:
+    - key: sun
+      text: Солнце
+      trait: courage
+    - key: rain
+      text: Тёплый дождь
+      trait: mischief
+    - key: fog
+      text: Туман
+      trait: curiosity
+    - key: snowfall
+      text: Снегопад
+      trait: tenderness
+
+- key: season-spring
+  kind: light
+  theme: seasons
+  text: Что первым делом сделать весной?
+  options:
+    - key: bike
+      text: Достать велосипед
+      trait: courage
+    - key: flowers
+      text: Купить цветы
+      trait: tenderness
+    - key: windows
+      text: Распахнуть все окна
+      trait: curiosity
+    - key: puddles
+      text: Пройтись по лужам в резиновых сапогах
+      trait: mischief
+
+# --- Смех ---
+
+- key: laugh-prank
+  kind: light
+  theme: laughter
+  text: Какой безобидный розыгрыш устроить в гнезде?
+  options:
+    - key: riddle
+      text: Оставить загадку на холодильнике
+      trait: curiosity
+    - key: cookie
+      text: Подложить печенье с сюрпризом
+      trait: mischief
+    - key: notes
+      text: Спрятать милые записки по всему дому
+      trait: tenderness
+    - key: ghost
+      text: Нарядиться привидением
+      trait: courage
+
+- key: laugh-sad
+  kind: closeness
+  theme: laughter
+  text: Что тебя смешит, даже когда грустно?
+
+- key: laugh-morning-animal
+  kind: guess
+  theme: laughter
+  text: Какое животное — это ты утром?
+  options:
+    - key: sloth
+      text: Ленивец
+      trait: tenderness
+    - key: hedgehog
+      text: Ёжик
+      trait: courage
+    - key: owl
+      text: Сова
+      trait: curiosity
+    - key: cat
+      text: Кот, который требует завтрак
+      trait: mischief
+
+- key: laugh-dance
+  kind: light
+  theme: laughter
+  text: Какой танец станцевать в честь пятницы?
+  options:
+    - key: waltz
+      text: Вальс на кухне
+      trait: tenderness
+    - key: robot
+      text: Танец робота
+      trait: mischief
+    - key: tango
+      text: Драматичное танго
+      trait: courage
+    - key: ducklings
+      text: Танец маленьких утят
+      trait: curiosity
+
+- key: laugh-cactus
+  kind: choice
+  theme: laughter
+  text: Как назовём кактус, который живёт в гнезде?
+  options:
+    - key: prickle
+      text: Колючка
+      trait: courage
+      chronicle: Кактус получил имя Колючка. Он не против. Наверное.
+    - key: kesha
+      text: Кеша
+      trait: mischief
+      chronicle: Кактус теперь зовут Кеша. Кеша растёт и очень этим гордится.
+    - key: sir
+      text: Сэр Кактус Третий
+      trait: curiosity
+      chronicle: В гнезде живёт Сэр Кактус Третий. Где первые два — тайна.
+
+- key: laugh-useless-power
+  kind: light
+  theme: laughter
+  text: Какую бесполезную суперсилу выбрать?
+  options:
+    - key: toast
+      text: Подогревать тосты взглядом
+      trait: courage
+    - key: socks
+      text: Всегда находить второй носок
+      trait: curiosity
+    - key: cats
+      text: Нравиться всем котам
+      trait: tenderness
+    - key: confetti
+      text: Чихать конфетти
+      trait: mischief
+
+- key: laugh-movie
+  kind: guess
+  theme: laughter
+  text: Какой фильм выберешь на вечер?
+  options:
+    - key: comedy
+      text: Комедию
+      trait: mischief
+    - key: horror
+      text: Ужастик
+      trait: courage
+    - key: drama
+      text: Что-нибудь трогательное
+      trait: tenderness
+    - key: space
+      text: Документалку про космос
+      trait: curiosity

@@ -5,7 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 - **Rebuild in progress.** The project is being rebuilt into «Воронье гнездо»: an asynchronous game in which a couple grows a shared pet. One web app runs as a Telegram Mini App and as a PWA, backed by the services `web`, `api`, `bot` and Railway Postgres. `PLAN.md` is the rebuild plan and the source of truth (decisions, rules, schema, milestones). The product brief is `voronye_gnezdo_mvp_spec.md`; `PLAN.md` wins where they differ.
-- **Milestones 0–3 are pushed (2026-10-21).** 0–1 are deployed and checked in Telegram with the test bot @Ushousebot, whose Main Mini App is `https://our-home.up.railway.app`. Milestones 2 and 3 were pushed while a Railway outage paused builds in all regions. So first make sure `api` and `web` run the latest commit: the api startup log shows `База: схема v3`. If Railway never picked the commit up, deploy it from the dashboard or with `serviceInstanceDeployV2`. Then come the milestone 2–3 checks inside Telegram and in the iPhone PWA, then milestone 4. **Visual design waits until after the functional milestones** (the user, 2026-10-21): keep screens plain. Commands and architecture notes for the new services are added here as milestones land.
+- **Milestones 0–4 are pushed (2026-10-22); only 0–1 are deployed.** 0–1 are checked in Telegram with the test bot @Ushousebot, whose Main Mini App is `https://our-home.up.railway.app`. Milestones 2–4 were pushed during a Railway outage. Builds come back in stages (Enterprise, then Pro, then Hobby; this project is on Hobby), and the outage signed the Railway CLI out. So first:
+  1. The user runs `railway login`.
+  2. Make sure `api` and `web` run the latest commit: the api startup log shows `База: применена миграция 2`, `3` and `4`, then `База: схема v4`. If Railway never picked the commit up, deploy it from the dashboard or with `serviceInstanceDeployV2`.
+  3. The milestone 2–4 checks inside Telegram and in the iPhone PWA.
+  4. Then milestone 5.
+
+  **Visual design waits until after the functional milestones** (the user, 2026-10-21): keep screens plain. Commands and architecture notes for the new services are added here as milestones land.
 - **The OurSpark photo bot stays in production, unchanged, until milestone 6** (repo `MrBoomer1981/OurSpark`, branch `main`; one bot serves many pairs; pair #1 is the user and their partner). Its code is `bot/`, `themes/` and the root `Dockerfile`; its spec is `docs/photo-bot.md`. Change it only to fix bugs.
 
 ## Working rules
@@ -77,7 +83,7 @@ Without `BOT_TOKEN` the api starts only with `DEBUG=true`: no Telegram, so the U
   - Schema changes only by appended migrations.
   - Assets are referenced by logical names through the manifest.
 
-What already exists (milestones 0–3):
+What already exists (milestones 0–4):
 
 - **Layers in `api`:** `http/` (routes, models, auth) → `game/` (rules) → `store/` (SQL). Routes that change something return the new `Me`, and `web` replaces its state with it. Rule violations come back as 409 with `{"detail": "<code>"}`; `web` turns codes into texts.
 - **Auth** (`services/api/app/http/deps.py`) accepts three schemes:
@@ -89,18 +95,27 @@ What already exists (milestones 0–3):
 - **Pairs** (`game/pairs.py`): locks are taken in one order, the pair row first and then the user row. Joining one's own pair again is not an error. The pet row and the `partner_joined` notification are written in the transaction that completes the pair.
 - **Outbox:** `notify.enqueue` writes into the caller's transaction with a unique key. `notify/relay.py` claims due rows every 2 s (`FOR UPDATE SKIP LOCKED`) and sends them through the Bot API. On 403 or «chat not found» it sets `users.tg_reachable = false` and does not retry. Rows for stub users (negative ids) are just marked sent.
 - **Content** lives in `services/api/content/*.yaml` and is loaded and validated at startup (`app/content`): a broken file stops `api` from starting instead of failing for a pair later.
-  - `prompts.yaml` holds the cards; each has a theme, and an option may carry a chronicle line for when both partners pick it.
+  - `prompts.yaml` holds the cards; each has a kind and a theme, and an option may carry a chronicle line for when both partners pick it. Kinds:
+    - `light` — an option about oneself;
+    - `closeness` — free text with no options, and it never shifts traits;
+    - `guess` — one's own option plus a prediction of the partner's;
+    - `choice` — an option for the pair, and every option needs a trait.
+
+    Their shares among assigned prompts are `KINDS` in `app/content`.
   - `themes.yaml` holds the themes and their relics. The loader rejects a theme with fewer than three cards, because its relic could never be earned.
   - `pet.yaml` holds the stages, the trait levels (habit text plus a Nest line), the cosmetic slots and the items.
-  - `lines.yaml` holds the pet's lines and the chronicle templates.
+  - `lines.yaml` holds the pet's lines (reactions without a trait and reveal lines per kind) and the chronicle templates.
 
   All keys are permanent; texts and numbers may change. A YAML string that contains `: ` must be quoted, otherwise it is read as a mapping (the loader rejects that).
 - **Prompt of the day** (`game/prompts.py`):
   - `GET /api/me` assigns it. A pair has one active session; the next one is assigned only on a later pair-day than the reveal (`completed_on`).
+  - The card is picked by kind share first, among kinds with uncompleted cards, then at random within the kind; cards shown to the pair that day are skipped.
   - The state is derived (`Today.state`), never stored.
-  - The mutual rule lives only in `Today.partner_answer`.
+  - The mutual rule lives only in `Today.partner_answer`. It covers the option, the text and the prediction.
+  - An answer is checked against the card's kind (`_check`); a prediction is written together with one's own answer and never changes.
   - Answers lock the session row, so exactly one of two simultaneous answers sees the partner's and sends «результат готов».
-- **Reveal** (`game/reveal.py`) is the one cross-domain transaction. The session row is locked and `completed_at` claimed; the +10 sparks, the trait shifts and the snapshot in `prompt_sessions.result` happen once; each viewer's `result_seen_at` is set.
+  - «Другой вопрос» (`POST /api/prompt/change`) works only while nobody has answered, `CHANGES_PER_DAY` times per pair-day. It locks the same row and replaces the session with a new id, so an answer sent to the old card gets `prompt_changed` instead of landing on the new one. Every shown card goes to `prompt_log`.
+- **Reveal** (`game/reveal.py`) is the main cross-domain transaction. The session row is locked and `completed_at` claimed; the +10 sparks, the trait shifts and the snapshot in `prompt_sessions.result` happen once; each viewer's `result_seen_at` is set.
 - **Rewards:** `reward_ledger` with unique event keys (`answer:<session>:<user>`, `reveal:<session>`, `buy:<pair>:<item>` for spending); the balance is the sum, and "earned" is the sum of positive rows only. Amounts live in `game/rewards.py` and are sent to `web` (`answer_sparks`), never hard-coded there. Traits are columns of `pets`, changed only under the reveal claim and never down.
 - **Progression** (`game/pet.py`) is checked only inside the reveal transaction:
   - stages open by earned sparks, so spending never slows growth;

@@ -28,7 +28,8 @@ async def add_stub_partner(conn: asyncpg.Connection, user_id: int) -> None:
 
 
 async def answer_for_partner(conn: asyncpg.Connection, user_id: int, content: Content, default_timezone: str) -> None:
-    """Партнёр отвечает на текущее послание случайным вариантом — как настоящий, с уведомлением.
+    """Партнёр отвечает на текущее послание — случайным вариантом (и прогнозом) или текстом-заглушкой,
+    как настоящий, с уведомлением.
 
     Это тестовый стенд, поэтому так можно и за настоящего партнёра, не только за подставного.
     """
@@ -37,8 +38,15 @@ async def answer_for_partner(conn: asyncpg.Connection, user_id: int, content: Co
     if user is None or state is None or state.partner is None:
         return
     today = await prompts.current(conn, state.pair.id, content, default_timezone)
-    option = random.choice(today.card.options)
-    await prompts.answer(conn, state.partner, user, today.session.id, option.key, content)
+    card = today.card
+    if card.kind == "closeness":
+        reply = prompts.Reply(text=texts.STUB_ANSWER)
+    else:
+        reply = prompts.Reply(
+            option=random.choice(card.options).key,
+            prediction=random.choice(card.options).key if card.kind == "guess" else None,
+        )
+    await prompts.answer(conn, state.partner, user, today.session.id, reply, content)
 
 
 async def _pair_id(conn: asyncpg.Connection, user_id: int) -> int | None:

@@ -197,6 +197,7 @@ function PromptStatus({ prompt, onOpenMessage, onReveal, onShowResult }: PromptS
     return (
       <section className="card">
         <h2>{texts.prompt.title}</h2>
+        <p className="muted small">{texts.message.kind[prompt.card.kind]}</p>
         {prompt.partner_answered && <p className="muted">{texts.prompt.partnerAnswered}</p>}
         <button className="button" onClick={onOpenMessage}>
           {texts.prompt.answer}
@@ -209,7 +210,7 @@ function PromptStatus({ prompt, onOpenMessage, onReveal, onShowResult }: PromptS
       <section className="card">
         <h2>{texts.prompt.waitingTitle}</h2>
         <p className="muted">
-          {texts.prompt.yourChoice}: <b>{prompt.mine?.text}</b>
+          {texts.prompt.yourAnswer}: <b>{short(prompt.mine?.text ?? '')}</b>
         </p>
       </section>
     );
@@ -261,4 +262,9 @@ function InviteCard({ invite, busy, onLeaveAndJoin, onDismiss }: InviteCardProps
       </button>
     </section>
   );
+}
+
+/** Длинный ответ текстом в Гнезде — только начало. */
+function short(text: string, limit = 80): string {
+  return text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text;
 }

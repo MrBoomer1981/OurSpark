@@ -21,7 +21,9 @@ class Session:
 @dataclass(frozen=True)
 class Answer:
     user_id: int
-    answer: str
+    answer: str | None  # ключ варианта; None — ответ текстом
+    text: str | None  # свободный ответ
+    prediction: str | None  # «Угадай партнёра»: какой вариант выберет партнёр
     created_at: datetime
     result_seen_at: datetime | None
 
@@ -48,15 +50,44 @@ async def get(conn: asyncpg.Connection, session_id: int, *, lock: bool = False) 
     return _session(row) if row else None
 
 
-async def create(conn: asyncpg.Connection, pair_id: int, day: date, prompt_key: str) -> None:
-    """Назначает послание на день. Если кто-то из пары успел первым, остаётся его послание."""
-    await conn.execute(
+async def create(conn: asyncpg.Connection, pair_id: int, day: date, prompt_key: str) -> bool:
+    """Назначает послание на день. Если кто-то из пары успел первым, остаётся его послание и возвращает False."""
+    inserted = await conn.fetchval(
         "INSERT INTO prompt_sessions (pair_id, day, prompt_key) VALUES ($1, $2, $3)"
-        " ON CONFLICT (pair_id, day) DO NOTHING",
+        " ON CONFLICT (pair_id, day) DO NOTHING RETURNING 1",
         pair_id,
         day,
         prompt_key,
     )
+    return inserted is not None
+
+
+async def replace(conn: asyncpg.Connection, session: Session, prompt_key: str) -> None:
+    """Другая карточка вместо послания без ответов: старое удаляется, новое получает новый id и тот же день."""
+    await conn.execute("DELETE FROM prompt_sessions WHERE id = $1", session.id)
+    await conn.execute(
+        "INSERT INTO prompt_sessions (pair_id, day, prompt_key) VALUES ($1, $2, $3)",
+        session.pair_id,
+        session.day,
+        prompt_key,
+    )
+
+
+async def log(conn: asyncpg.Connection, pair_id: int, day: date, prompt_key: str, *, changed: bool) -> None:
+    """Журнал показов: каждая карточка, которую пара увидела, в том числе сменённая."""
+    await conn.execute(
+        "INSERT INTO prompt_log (pair_id, day, prompt_key, changed) VALUES ($1, $2, $3, $4)",
+        pair_id,
+        day,
+        prompt_key,
+        changed,
+    )
+
+
+async def shown_today(conn: asyncpg.Connection, pair_id: int, day: date) -> tuple[set[str], int]:
+    """Карточки, показанные паре в этот день, и сколько раз за день послание сменили."""
+    rows = await conn.fetch("SELECT prompt_key, changed FROM prompt_log WHERE pair_id = $1 AND day = $2", pair_id, day)
+    return {row["prompt_key"] for row in rows}, sum(1 for row in rows if row["changed"])
 
 
 async def used_keys(conn: asyncpg.Connection, pair_id: int) -> list[tuple[str, bool]]:
@@ -71,19 +102,34 @@ async def used_keys(conn: asyncpg.Connection, pair_id: int) -> list[tuple[str, b
 
 async def answers(conn: asyncpg.Connection, session_id: int) -> dict[int, Answer]:
     rows = await conn.fetch(
-        "SELECT user_id, answer, created_at, result_seen_at FROM answers WHERE session_id = $1", session_id
+        "SELECT user_id, answer, text, prediction, created_at, result_seen_at FROM answers WHERE session_id = $1",
+        session_id,
     )
-    return {row["user_id"]: Answer(row["user_id"], row["answer"], row["created_at"], row["result_seen_at"]) for row in rows}
+    return {
+        row["user_id"]: Answer(
+            row["user_id"], row["answer"], row["text"], row["prediction"], row["created_at"], row["result_seen_at"]
+        )
+        for row in rows
+    }
 
 
-async def add_answer(conn: asyncpg.Connection, session_id: int, user_id: int, answer: str) -> bool:
-    """Записывает ответ. Повторная отправка ничего не меняет и возвращает False."""
+async def add_answer(
+    conn: asyncpg.Connection,
+    session_id: int,
+    user_id: int,
+    answer: str | None,
+    text: str | None,
+    prediction: str | None,
+) -> bool:
+    """Записывает ответ вместе с прогнозом. Повторная отправка ничего не меняет и возвращает False."""
     inserted = await conn.fetchval(
-        "INSERT INTO answers (session_id, user_id, answer) VALUES ($1, $2, $3)"
+        "INSERT INTO answers (session_id, user_id, answer, text, prediction) VALUES ($1, $2, $3, $4, $5)"
         " ON CONFLICT (session_id, user_id) DO NOTHING RETURNING 1",
         session_id,
         user_id,
         answer,
+        text,
+        prediction,
     )
     return inserted is not None
 
@@ -127,8 +173,9 @@ async def delete(conn: asyncpg.Connection, session_id: int) -> None:
 
 
 async def delete_pair(conn: asyncpg.Connection, pair_id: int) -> None:
-    """Только для отладки: все послания пары и ответы на них."""
+    """Только для отладки: все послания пары, ответы на них и журнал показов."""
     await conn.execute(
         "DELETE FROM answers WHERE session_id IN (SELECT id FROM prompt_sessions WHERE pair_id = $1)", pair_id
     )
     await conn.execute("DELETE FROM prompt_sessions WHERE pair_id = $1", pair_id)
+    await conn.execute("DELETE FROM prompt_log WHERE pair_id = $1", pair_id)

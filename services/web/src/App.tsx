@@ -116,6 +116,7 @@ export function App() {
     if (screen === 'message' && prompt) {
       content = (
         <Message
+          key={prompt.session_id}
           prompt={prompt}
           pet={view.me.pet}
           onMe={showMe}

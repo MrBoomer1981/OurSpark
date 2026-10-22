@@ -141,4 +141,26 @@ MIGRATIONS: list[str] = [
     INSERT INTO chronicle (pair_id, event_key, kind, created_at)
     SELECT pair_id, 'hatch', 'hatch', created_at FROM pets;
     """,
+    # 4 — все типы посланий: свободный ответ, прогноз, журнал показов
+    """
+    ALTER TABLE answers
+        ALTER COLUMN answer DROP NOT NULL,  -- ключ варианта; у ответа текстом — NULL
+        ADD COLUMN text text,               -- свободный ответ (о близости)
+        ADD COLUMN prediction text,         -- «Угадай партнёра»: ключ варианта, который выберет партнёр
+        ADD CONSTRAINT answers_not_empty CHECK (answer IS NOT NULL OR text IS NOT NULL);
+
+    CREATE TABLE prompt_log (
+        id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        pair_id    bigint NOT NULL REFERENCES pairs (id),
+        day        date NOT NULL,  -- день пары, когда карточку показали
+        prompt_key text NOT NULL,
+        changed    boolean NOT NULL DEFAULT false,  -- показана вместо сменённой («Другой вопрос»)
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX prompt_log_by_pair_day ON prompt_log (pair_id, day);
+
+    -- Уже назначенные послания — в журнал показов.
+    INSERT INTO prompt_log (pair_id, day, prompt_key, created_at)
+    SELECT pair_id, day, prompt_key, assigned_at FROM prompt_sessions;
+    """,
 ]

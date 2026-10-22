@@ -11,10 +11,11 @@ import asyncpg
 from app.content import RELIC_SERIES, Content, pick
 from app.context import Context
 from app.game import pairs, pet, prompts, rewards
-from app.game.prompts import Today
+from app.game.prompts import TEXT_LIMIT, Today
 from app.http.models import (
+    AnswerView,
     CardView,
-    Choice,
+    GuessView,
     HabitView,
     ItemView,
     Me,
@@ -34,6 +35,7 @@ from app.http.models import (
     TraitValue,
 )
 from app.store import push, users
+from app.store.prompts import Answer
 from app.store.users import User
 
 TELEGRAM: dict[bool | None, Literal["on", "off", "unknown"]] = {True: "on", False: "off", None: "unknown"}
@@ -130,27 +132,38 @@ def _item(key: str, traits: dict[str, int], equipped: dict[str, str], opened: se
     )
 
 
-def _choice(today: Today, option_key: str) -> Choice:
-    option = today.card.option(option_key)
-    return Choice(option=option_key, text=option.text if option else option_key)
+def _option(today: Today, key: str) -> AnswerView:
+    option = today.card.option(key)
+    return AnswerView(option=key, text=option.text if option else key)
+
+
+def _answer(today: Today, answer: Answer) -> AnswerView:
+    """Ответ вариантом или текстом."""
+    if answer.answer is None:
+        return AnswerView(option=None, text=answer.text or "")
+    return _option(today, answer.answer)
 
 
 def _prompt(today: Today, user: User, content: Content) -> PromptView:
     seed = today.session.id + abs(user.id)
+    card = today.card
     mine = today.answers.get(user.id)
-    my_option = today.card.option(mine.answer) if mine else None
+    my_option = card.option(mine.answer) if mine and mine.answer else None
     view = PromptView(
         session_id=today.session.id,
         day=today.session.day,
         state=today.state(user.id),
         card=CardView(
-            key=today.card.key,
-            kind="choice",
-            text=today.card.text,
-            options=[OptionView(key=o.key, text=o.text) for o in today.card.options],
+            key=card.key,
+            kind=card.kind,
+            text=card.text,
+            options=[OptionView(key=o.key, text=o.text) for o in card.options],
+            max_length=TEXT_LIMIT if card.kind == "closeness" else None,
         ),
-        mine=_choice(today, mine.answer) if mine else None,
-        reaction=content.line("answer", my_option.trait, seed) if my_option else None,
+        mine=_answer(today, mine) if mine else None,
+        prediction=_option(today, mine.prediction) if mine and mine.prediction else None,
+        changes_left=today.changes_left,
+        reaction=_reaction(card.kind, my_option.trait if my_option else None, content, seed) if mine else None,
         answer_sparks=rewards.ANSWER_SPARKS if mine else None,
         partner_answered=any(user_id != user.id for user_id in today.answers),
         seen=bool(mine and mine.result_seen_at),
@@ -159,15 +172,19 @@ def _prompt(today: Today, user: User, content: Content) -> PromptView:
     partner = today.partner_answer(user.id)  # правило взаимности: None, пока не ответили оба
     result = today.session.result
     if partner is not None and mine is not None and result is not None:
-        same = partner.answer == mine.answer
+        same = mine.answer is not None and partner.answer == mine.answer
+        my_guess = partner_guess = None
+        if card.kind == "guess" and mine.prediction and partner.prediction:
+            my_guess = GuessView(text=_option(today, mine.prediction).text, correct=mine.prediction == partner.answer)
+            partner_guess = GuessView(
+                text=_option(today, partner.prediction).text, correct=partner.prediction == mine.answer
+            )
         view.result = ResultView(
-            partner=_choice(today, partner.answer),
+            partner=_answer(today, partner),
             same=same,
-            line=(
-                content.line("reveal", "same", seed, option=view.mine.text if view.mine else "")
-                if same
-                else content.line("reveal", "different", seed)
-            ),
+            my_guess=my_guess,
+            partner_guess=partner_guess,
+            line=_reveal_line(card.kind, same, [my_guess, partner_guess], view.mine, content, seed),
             sparks=result.get("sparks", 0),
             traits=[
                 TraitShift(key=key, name=content.traits[key].name if key in content.traits else key, delta=delta)
@@ -177,6 +194,29 @@ def _prompt(today: Today, user: User, content: Content) -> PromptView:
             chronicle=my_option.chronicle if result.get("chronicle") and my_option else None,
         )
     return view
+
+
+def _reaction(kind: str, trait: str | None, content: Content, seed: int) -> str:
+    """Реакция питомца на свой ответ: по шкале варианта, а без шкалы — по типу вопроса.
+
+    В «Угадай партнёра» питомец всегда говорит о прогнозе: он главный в этом ответе.
+    """
+    if kind in ("light", "choice") and trait is not None:
+        return content.line("answer", trait, seed)
+    return content.line("reply", "light" if kind == "choice" else kind, seed)
+
+
+def _reveal_line(
+    kind: str, same: bool, guesses: list[GuessView | None], mine: AnswerView | None, content: Content, seed: int
+) -> str:
+    """Общая реакция питомца после раскрытия — по типу вопроса."""
+    if kind == "closeness":
+        return content.line("reveal", "closeness", seed)
+    if kind == "guess":
+        hits = sum(1 for guess in guesses if guess is not None and guess.correct)
+        return content.line("reveal", ("guess_none", "guess_one", "guess_both")[hits], seed)
+    case = ("light_" if kind == "light" else "") + ("same" if same else "different")
+    return content.line("reveal", case, seed, option=mine.text if mine else "")
 
 
 def _news(raw: dict[str, Any], content: Content) -> NewsView | None:

@@ -11,7 +11,14 @@ from typing import Any
 import yaml
 
 CONTENT_DIR = Path(__file__).resolve().parents[2] / "content"
-KINDS = ("choice",)  # совместный выбор; остальные типы — этап 4
+# Типы посланий и их доли среди назначаемых, в процентах.
+KINDS = {
+    "light": 35,  # лёгкий: вариант о себе
+    "closeness": 30,  # о близости: свободный текст, шкалы не двигает
+    "guess": 20,  # «Угадай партнёра»: свой вариант и прогноз варианта партнёра
+    "choice": 15,  # совместный выбор: вариант за пару, шкала у каждого варианта
+}
+OPTION_KINDS = ("light", "guess", "choice")  # типы, где отвечают вариантом
 RELIC_SERIES = 3  # реликвия темы — за столько завершённых посланий этой темы
 
 
@@ -19,7 +26,7 @@ RELIC_SERIES = 3  # реликвия темы — за столько завер
 class Option:
     key: str
     text: str
-    trait: str
+    trait: str | None  # шкала, которую сдвигает вариант; в совместном выборе — у каждого
     chronicle: str | None  # запись летописи, если вариант выбрали оба
 
 
@@ -295,12 +302,15 @@ def _card(raw: Any, traits: dict[str, Trait], themes: dict[str, Theme]) -> Card:
     theme = raw.get("theme")
     if theme not in themes:
         raise ValueError(f"{where}: неизвестная тема {theme!r} (темы — в themes.yaml)")
+    kind = raw["kind"]
     options = []
     for index, body in enumerate(raw.get("options") or []):
         option_where = f"{where}, вариант №{index + 1}"
         body = _mapping(body, option_where)
         trait = body.get("trait")
-        if trait not in traits:
+        if trait is None and kind == "choice":
+            raise ValueError(f"{option_where}: в совместном выборе у варианта нужна шкала (trait)")
+        if trait is not None and trait not in traits:
             raise ValueError(f"{option_where}: неизвестная шкала {trait!r}")
         options.append(
             Option(
@@ -310,12 +320,14 @@ def _card(raw: Any, traits: dict[str, Trait], themes: dict[str, Theme]) -> Card:
                 chronicle=_optional_text(body, "chronicle", option_where),
             )
         )
-    if len(options) < 2:
+    if kind in OPTION_KINDS and len(options) < 2:
         raise ValueError(f"{where}: нужно хотя бы два варианта")
+    if kind not in OPTION_KINDS and options:
+        raise ValueError(f"{where}: на вопрос о близости отвечают текстом — варианты не нужны")
     _unique([option.key for option in options], where)
     return Card(
         key=_text(raw, "key", where),
-        kind=raw["kind"],
+        kind=kind,
         theme=theme,
         text=_text(raw, "text", where),
         options=tuple(options),
@@ -326,7 +338,17 @@ def _check_lines(lines: dict[str, dict[str, list[str]]], traits: dict[str, Trait
     required = {
         "nest": ["idle", "your_turn", "partner_answered", "waiting", "ready", "done"],
         "answer": list(traits),
-        "reveal": ["same", "different"],
+        "reply": ["light", "closeness", "guess"],
+        "reveal": [
+            "same",  # совместный выбор
+            "different",
+            "light_same",
+            "light_different",
+            "closeness",
+            "guess_both",  # «Угадай партнёра»: сбылись оба прогноза
+            "guess_one",
+            "guess_none",
+        ],
         "chronicle": ["hatch", "stage", "habit", "relic"],
     }
     for group, cases in required.items():

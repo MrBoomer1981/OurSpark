@@ -126,6 +126,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/prompt/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change
+         * @description «Другой вопрос»: пока никто не ответил, несколько раз в день.
+         */
+        post: operations["change_api_prompt_change_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/prompt/reveal": {
         parameters: {
             query?: never;
@@ -389,12 +409,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** AnswerRequest */
+        /**
+         * AnswerRequest
+         * @description Ответ по типу карточки: option — вариант; text — ответ о близости; option и prediction — «Угадай партнёра».
+         */
         AnswerRequest: {
             /** Session Id */
             session_id: number;
             /** Option */
-            option: string;
+            option?: string | null;
+            /** Text */
+            text?: string | null;
+            /** Prediction */
+            prediction?: string | null;
+        };
+        /** AnswerView */
+        AnswerView: {
+            /** Option */
+            option: string | null;
+            /** Text */
+            text: string;
         };
         /** ApiError */
         ApiError: {
@@ -421,20 +455,20 @@ export interface components {
             key: string;
             /**
              * Kind
-             * @constant
+             * @enum {string}
              */
-            kind: "choice";
+            kind: "light" | "closeness" | "guess" | "choice";
             /** Text */
             text: string;
             /** Options */
             options: components["schemas"]["OptionView"][];
+            /** Max Length */
+            max_length: number | null;
         };
-        /** Choice */
-        Choice: {
-            /** Option */
-            option: string;
-            /** Text */
-            text: string;
+        /** ChangeRequest */
+        ChangeRequest: {
+            /** Session Id */
+            session_id: number;
         };
         /** ChronicleEntryView */
         ChronicleEntryView: {
@@ -457,6 +491,16 @@ export interface components {
         ChronicleView: {
             /** Entries */
             entries: components["schemas"]["ChronicleEntryView"][];
+        };
+        /**
+         * GuessView
+         * @description Прогноз в «Угадай партнёра»: какой вариант выберет другой и сбылось ли.
+         */
+        GuessView: {
+            /** Text */
+            text: string;
+            /** Correct */
+            correct: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -624,7 +668,10 @@ export interface components {
              */
             state: "ASSIGNED" | "WAITING_FOR_PARTNER" | "READY_TO_REVEAL" | "COMPLETED";
             card: components["schemas"]["CardView"];
-            mine: components["schemas"]["Choice"] | null;
+            mine: components["schemas"]["AnswerView"] | null;
+            prediction: components["schemas"]["AnswerView"] | null;
+            /** Changes Left */
+            changes_left: number;
             /** Reaction */
             reaction: string | null;
             /** Answer Sparks */
@@ -665,9 +712,11 @@ export interface components {
         };
         /** ResultView */
         ResultView: {
-            partner: components["schemas"]["Choice"];
+            partner: components["schemas"]["AnswerView"];
             /** Same */
             same: boolean;
+            my_guess: components["schemas"]["GuessView"] | null;
+            partner_guess: components["schemas"]["GuessView"] | null;
             /** Line */
             line: string;
             /** Sparks */
@@ -1003,6 +1052,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_api_prompt_change_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeRequest"];
             };
         };
         responses: {

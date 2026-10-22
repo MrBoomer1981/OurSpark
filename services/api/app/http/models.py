@@ -5,6 +5,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.game.prompts import TEXT_LIMIT
+
+Kind = Literal["light", "closeness", "guess", "choice"]
+
 
 class ApiError(BaseModel):
     detail: str  # код ошибки, например pair_full; текст для человека — в web
@@ -97,14 +101,22 @@ class OptionView(BaseModel):
 
 class CardView(BaseModel):
     key: str
-    kind: Literal["choice"]
+    kind: Kind
     text: str
-    options: list[OptionView]
+    options: list[OptionView]  # у вопроса о близости вариантов нет — отвечают текстом
+    max_length: int | None  # предел свободного ответа; None — отвечают вариантом
 
 
-class Choice(BaseModel):
-    option: str
+class AnswerView(BaseModel):
+    option: str | None  # ключ варианта; None — ответ текстом
+    text: str  # текст варианта или сам ответ
+
+
+class GuessView(BaseModel):
+    """Прогноз в «Угадай партнёра»: какой вариант выберет другой и сбылось ли."""
+
     text: str
+    correct: bool
 
 
 class TraitShift(BaseModel):
@@ -122,8 +134,10 @@ class NewsView(BaseModel):
 
 
 class ResultView(BaseModel):
-    partner: Choice
-    same: bool
+    partner: AnswerView
+    same: bool  # выбран один и тот же вариант
+    my_guess: GuessView | None  # «Угадай партнёра»: мой прогноз ответа партнёра
+    partner_guess: GuessView | None  # и прогноз партнёра о моём ответе
     line: str  # общая реакция питомца
     sparks: int
     traits: list[TraitShift]
@@ -136,8 +150,10 @@ class PromptView(BaseModel):
     day: date
     state: Literal["ASSIGNED", "WAITING_FOR_PARTNER", "READY_TO_REVEAL", "COMPLETED"]
     card: CardView
-    mine: Choice | None
-    reaction: str | None  # реакция питомца на мой выбор
+    mine: AnswerView | None
+    prediction: AnswerView | None  # мой прогноз ответа партнёра («Угадай партнёра»)
+    changes_left: int  # «Другой вопрос»: сколько раз ещё можно сменить послание сегодня; 0 — нельзя
+    reaction: str | None  # реакция питомца на мой ответ
     answer_sparks: int | None  # сколько искр дал мой ответ
     partner_answered: bool  # что выбрал партнёр — только в result, когда ответили оба
     seen: bool  # я уже открывал результат: раскрытие больше не проигрывается
@@ -175,8 +191,16 @@ class JoinRequest(BaseModel):
 
 
 class AnswerRequest(BaseModel):
+    """Ответ по типу карточки: option — вариант; text — ответ о близости; option и prediction — «Угадай партнёра»."""
+
     session_id: int
-    option: str = Field(min_length=1, max_length=64)
+    option: str | None = Field(default=None, min_length=1, max_length=64)
+    text: str | None = Field(default=None, max_length=TEXT_LIMIT)
+    prediction: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class ChangeRequest(BaseModel):
+    session_id: int
 
 
 class RevealRequest(BaseModel):
