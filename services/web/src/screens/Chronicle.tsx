@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { api, call, type Me } from '../api/client';
+import { api, call, track, type Me } from '../api/client';
 import type { components } from '../api/schema';
 import { texts } from '../texts';
 import { BackLink } from '../ui/BackLink';
@@ -18,6 +18,7 @@ export function Chronicle({ me, onUnauthorized, onBack }: Props) {
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0); // «Повторить» загружает заново
+  useEffect(() => track('chronicle'), []);
 
   // Записей со временем много, поэтому их нет в /me: летопись грузится, когда её открывают.
   useEffect(() => {

@@ -163,4 +163,18 @@ MIGRATIONS: list[str] = [
     INSERT INTO prompt_log (pair_id, day, prompt_key, created_at)
     SELECT pair_id, day, prompt_key, assigned_at FROM prompt_sessions;
     """,
+    # 5 — метрики закрытого теста (ТЗ §13): кто когда открывал Гнездо и экраны
+    """
+    CREATE TABLE events (
+        id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        pair_id    bigint NOT NULL REFERENCES pairs (id),
+        user_id    bigint NOT NULL REFERENCES users (user_id),
+        kind       text NOT NULL,  -- open · screen
+        day        date NOT NULL,  -- день пары: по нему считается возвращаемость
+        data       jsonb NOT NULL DEFAULT '{}',  -- screen: {"screen": "pet" | "chronicle"}
+        key        text NOT NULL UNIQUE,  -- повтор не допишет вторую: open:<человек>:<день> · screen:<экран>:<человек>:<минута UTC>
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX events_by_pair ON events (pair_id, kind, day);
+    """,
 ]

@@ -14,6 +14,10 @@ class ApiError(BaseModel):
     detail: str  # код ошибки, например pair_full; текст для человека — в web
 
 
+class ScreenEvent(BaseModel):
+    screen: Literal["pet", "chronicle"]  # какой экран открыт: для метрик ТЗ §13
+
+
 class AppConfig(BaseModel):
     debug: bool
     new_pairs: bool

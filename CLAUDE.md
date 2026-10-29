@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 - **Rebuild in progress.** The project is being rebuilt into «Воронье гнездо»: an asynchronous game in which a couple grows a shared pet. One web app runs as a Telegram Mini App and as a PWA, backed by the services `web`, `api`, `bot` and Railway Postgres. `PLAN.md` is the rebuild plan and the source of truth (decisions, rules, schema, milestones). The product brief is `voronye_gnezdo_mvp_spec.md`; `PLAN.md` wins where they differ.
-- **Milestones 0–4 are deployed and checked (2026-10-29)** with the test bot @Ushousebot, whose Main Mini App is `https://our-home.up.railway.app`. Milestones 2–4 were pushed during a Railway outage and deployed by hand later (`railway redeploy --from-source`). **Now: milestone 5** (`PLAN.md` §5, approved 2026-10-29 with the recommended options: free asset packs, manual `pg_dump` backups, the in-app survey): 5.1 the pixel-gothic theme (done, checked by the user 2026-10-29) → 5.2 error states (pushed 2026-10-29) → 5.3 metrics → 5.4 the closed test on pair #1.
+- **Milestones 0–4 are deployed and checked (2026-10-29)** with the test bot @Ushousebot, whose Main Mini App is `https://our-home.up.railway.app`. Milestones 2–4 were pushed during a Railway outage and deployed by hand later (`railway redeploy --from-source`). **Now: milestone 5** (`PLAN.md` §5, approved 2026-10-29 with free asset packs and manual `pg_dump` backups; no in-app survey — the user asks pairs in person): 5.1 the pixel-gothic theme (done, checked by the user 2026-10-29) → 5.2 error states (pushed 2026-10-29) → 5.3 metrics (pushed 2026-10-29) → 5.4 the closed test on pair #1: on 2026-10-29 the stand was dumped to `~/Backups/voronye-gnezdo/`, wiped and switched to `DEBUG=false`; pair #1 builds its pair anew.
 
   **Visual design starts with milestone 5.1.** Until the functional milestones were done, screens stayed plain (the user, 2026-10-21). Commands and architecture notes for the new services are added here as milestones land.
 - **The OurSpark photo bot stays in production, unchanged, until milestone 6** (repo `MrBoomer1981/OurSpark`, branch `main`; one bot serves many pairs; pair #1 is the user and their partner). Its code is `bot/`, `themes/` and the root `Dockerfile`; its spec is `docs/photo-bot.md`. Change it only to fix bugs.
@@ -54,6 +54,10 @@ python -m app                     # never while the Railway `bot` polls the same
 railway deployment list --service api      # did a push reach the service (SKIPPED: Watch Paths did not match)
 railway logs --service api --lines 100     # startup log; also web, bot
 railway redeploy --service api --from-source --yes   # deploy the latest main by hand when a push was not picked up
+railway ssh --service Postgres -- psql -c "<query>"   # read the game database; metrics queries: docs/metrics.md
+railway ssh --service Postgres -- pg_dump --no-owner | gzip > ~/Backups/voronye-gnezdo/$(date +%Y-%m-%d-%H%M).sql.gz
+                                                      # backup outside the repo (answers are private); during the closed test
+                                                      # before every deploy that changes the schema or data
 ```
 
 Without `BOT_TOKEN` the api starts only with `DEBUG=true`: no Telegram, so the UI is used in a desktop browser through the debug login (stub users).
@@ -129,6 +133,7 @@ What already exists (milestones 0–4):
   - `POST /api/pet/wear` puts an owned item on or takes it off (`pets.equipped`, one item per slot).
   - Try-on exists only in `web`.
 - **Chronicle** (`game/chronicle.py`): entries are unique per `(pair_id, event_key)` and store a kind plus content keys; the text is rendered from content when shown. The first entry, `hatch`, is written in the transaction that completes the pair (migration 3 added it for existing pairs). `GET /api/chronicle` serves it apart from `/me`, which only carries bounded data.
+- **Metrics** (`game/metrics.py`, table `events`, migration 5): `GET /api/me` records `open` once per person per pair-day; `POST /api/events` (`{screen: pet | chronicle}`, 204) records a screen at most once a minute, sent by `web` without waiting (`track` in `api/client.ts`). They never affect the game. Queries for brief §13 are in `docs/metrics.md`.
 - **Pair clock** (`game/clock.py`): the day is the date in the pair's zone (`TIMEZONE`) plus a `DEBUG` day offset stored in `pair_settings` («следующий день» in the debug panel).
 - **Debug panel** (`src/debug/DebugPanel.tsx` in `web`, shown when `GET /api/config` says `debug`; the `/api/debug/*` routes are mounted only with `DEBUG`): a stub partner joins (id `-(1000 + pair_id)`), the partner answers at random, next day, +100 sparks, reset today's prompt, reset the pair's progress (the `hatch` entry stays). It answers for a real partner too, since the stand is a test one. Outside Telegram it also logs in as stub users -1 and -2 and switches between them.
 - **Channels:** the relay tries web push first (`notify/push.py`, VAPID; 404/410 disables a subscription) and falls back to the bot. `POST /api/notifications/push` accepts only endpoints of browser push services. A `tma` request with `allows_write_to_pm` marks the Telegram channel as working.

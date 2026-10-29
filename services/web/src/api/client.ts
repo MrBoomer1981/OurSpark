@@ -27,6 +27,11 @@ function authorization(): string | undefined {
   return debugUser !== null ? `debug ${debugUser}` : undefined;
 }
 
+/** Для метрик закрытого теста (ТЗ §13): экран открыт. Ответ не нужен, сбой игре не мешает. */
+export function track(screen: 'pet' | 'chronicle'): void {
+  api.POST('/api/events', { body: { screen } }).catch(() => undefined);
+}
+
 export function hasCredentials(): boolean {
   return authorization() !== undefined;
 }

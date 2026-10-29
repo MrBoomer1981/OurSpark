@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from app.game import metrics
 from app.http.deps import Conn, Ctx, CurrentUser
 from app.http.models import ApiError, AppConfig, Me
 from app.http.views import view
@@ -21,4 +22,5 @@ async def app_config(ctx: Ctx) -> AppConfig:
 @router.get("/me", responses={401: {"model": ApiError}})
 async def me(user: CurrentUser, conn: Conn, ctx: Ctx) -> Me:
     """Состояние человека. Заодно назначает послание дня, если пора: оно назначается, когда открывают Гнездо."""
+    await metrics.opened(conn, user, ctx.config.timezone)  # для возвращаемости пар (ТЗ §13)
     return await view(conn, user.id, ctx)

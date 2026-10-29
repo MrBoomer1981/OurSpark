@@ -14,7 +14,7 @@ from loguru import logger
 from app import content, logs
 from app.config import Config
 from app.context import Context
-from app.http import auth, chronicle, debug, health, me, notifications, pairs, pet, prompt
+from app.http import auth, chronicle, debug, events, health, me, notifications, pairs, pet, prompt
 from app.notify import relay
 from app.notify.push import Push
 from app.store import db
@@ -62,7 +62,7 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
     app.state.config = config
-    for module in (health, me, pairs, prompt, pet, chronicle, notifications, auth):
+    for module in (health, me, pairs, prompt, pet, chronicle, notifications, events, auth):
         app.include_router(module.router, prefix="/api")
     if config.debug:
         app.include_router(debug.router, prefix="/api")

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import { api, call, type Me } from '../api/client';
+import { api, call, track, type Me } from '../api/client';
 import { useAction } from '../api/useAction';
 import { Bar, Growth } from '../pet/Growth';
 import { PetView, type Pet as PetData } from '../pet/PetView';
@@ -23,6 +23,7 @@ export function Pet({ me, onMe, onUnauthorized, onStale, onBack }: Props) {
   const [open, setOpen] = useState<string | null>(null); // раскрытый предмет — его и примеряем
   const [reaction, setReaction] = useState<{ item: string; text: string } | null>(null); // питомец об обнове
   const { run, pending, busy, message } = useAction({ onMe, onUnauthorized, onStale });
+  useEffect(() => track('pet'), []);
   const pet = me.pet;
   if (!pet) return null;
 
