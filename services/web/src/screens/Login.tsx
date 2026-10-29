@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, call, type AppConfig } from '../api/client';
 import { credentials } from '../platform/credentials';
 import { texts } from '../texts';
+import { Icon } from '../ui/Icon';
 
 type LoginLink = { nonce: string; link: string };
 type State = 'preparing' | 'ready' | 'waiting' | 'expired' | 'off' | 'error';
@@ -70,6 +71,7 @@ export function Login({ config, onLoggedIn }: Props) {
 
   return (
     <main className="screen center">
+      <Icon name="seal" scale={5} />
       <h1 className="title">{texts.appName}</h1>
       <p className="muted">{texts.login.lead}</p>
 

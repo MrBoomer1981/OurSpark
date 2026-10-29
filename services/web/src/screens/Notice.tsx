@@ -1,4 +1,5 @@
 import { texts } from '../texts';
+import { Icon } from '../ui/Icon';
 
 type Props = {
   text: string;
@@ -9,6 +10,7 @@ type Props = {
 export function Notice({ text, action }: Props) {
   return (
     <main className="screen center">
+      <Icon name="habit" scale={5} />
       <h1 className="title">{texts.appName}</h1>
       <p className="muted">{text}</p>
       {action && (

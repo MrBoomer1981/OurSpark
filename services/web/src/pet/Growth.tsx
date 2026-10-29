@@ -12,7 +12,7 @@ export function Growth({ pet }: { pet: Pet }) {
       </p>
       {next ? (
         <>
-          <progress max={next.sparks} value={Math.min(pet.earned, next.sparks)} />
+          <Bar value={pet.earned} max={next.sparks} label={texts.pet.toNext(next.name, pet.earned, next.sparks)} />
           <p className="muted small">
             {pet.earned >= next.sparks
               ? texts.pet.growsSoon(next.name)
@@ -22,6 +22,25 @@ export function Growth({ pet }: { pet: Pet }) {
       ) : (
         <p className="muted small">{texts.pet.lastStage}</p>
       )}
+    </div>
+  );
+}
+
+type BarProps = { value: number; max: number; label: string; kind?: 'trait' };
+
+/** Пиксельная полоска прогресса. */
+export function Bar({ value, max, label, kind }: BarProps) {
+  const share = max > 0 ? Math.min(value / max, 1) : 1;
+  return (
+    <div
+      className={kind ? `bar ${kind}` : 'bar'}
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-valuenow={Math.min(value, max)}
+    >
+      <span style={{ width: `${share * 100}%` }} />
     </div>
   );
 }

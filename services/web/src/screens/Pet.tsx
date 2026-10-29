@@ -1,10 +1,11 @@
 import { useState } from 'react';
 
 import { api, call, type Me, type Result } from '../api/client';
-import { Growth } from '../pet/Growth';
+import { Bar, Growth } from '../pet/Growth';
 import { PetView, type Pet as PetData } from '../pet/PetView';
 import { errorText, texts } from '../texts';
 import { BackLink } from '../ui/BackLink';
+import { Icon } from '../ui/Icon';
 
 type Item = PetData['items'][number];
 
@@ -53,8 +54,11 @@ export function Pet({ me, onMe, onUnauthorized, onBack }: Props) {
         <h2>{texts.pet.stages}</h2>
         <ul className="list plain">
           {pet.stages.map((stage) => (
-            <li key={stage.key} className={stage.reached ? undefined : 'muted'}>
-              {stage.reached ? '✓' : '○'} {stage.name} <span className="muted small">— {texts.pet.stageSparks(stage.sparks)}</span>
+            <li key={stage.key} className={stage.reached ? 'entry' : 'entry locked muted'}>
+              <Icon name="stage" />
+              <span>
+                {stage.name} <span className="muted small">— {texts.pet.stageSparks(stage.sparks)}</span>
+              </span>
             </li>
           ))}
         </ul>
@@ -63,22 +67,28 @@ export function Pet({ me, onMe, onUnauthorized, onBack }: Props) {
       <section className="card">
         <h2>{texts.pet.character}</h2>
         <p className="muted small">{texts.pet.characterHint}</p>
-        <ul className="list">
+        <ul className="list plain">
           {pet.traits.map((trait) => (
-            <li key={trait.key}>
-              <b>{trait.name}</b> {trait.value}{' '}
-              <span className="muted small">
-                · {trait.next_at === null ? texts.pet.allHabits : texts.pet.nextHabit(trait.next_at)}
+            <li key={trait.key} className="trait">
+              <span className="trait-head">
+                <b>{trait.name}</b>
+                <span className="muted small">
+                  {trait.next_at === null ? texts.pet.allHabits : texts.pet.nextHabit(trait.next_at)}
+                </span>
               </span>
+              <Bar value={trait.value} max={trait.next_at ?? trait.value} label={`${trait.name}: ${trait.value}`} kind="trait" />
             </li>
           ))}
         </ul>
         <h3>{texts.pet.habits}</h3>
         {pet.habits.length > 0 ? (
-          <ul className="list">
+          <ul className="list plain">
             {pet.habits.map((habit) => (
-              <li key={habit.text}>
-                {habit.text} <span className="muted small">· {habit.trait}</span>
+              <li key={habit.text} className="entry">
+                <Icon name="habit" />
+                <span>
+                  {habit.text} <span className="muted small">· {habit.trait}</span>
+                </span>
               </li>
             ))}
           </ul>

@@ -4,6 +4,7 @@ import { api, call, type Me, type Result } from '../api/client';
 import { PetView, type Pet } from '../pet/PetView';
 import { errorText, texts } from '../texts';
 import { BackLink } from '../ui/BackLink';
+import { Icon } from '../ui/Icon';
 
 type Prompt = NonNullable<Me['prompt']>;
 type Card = Prompt['card'];
@@ -62,11 +63,17 @@ export function Message({ prompt, pet, onMe, onUnauthorized, onReveal, onBack }:
       <main className="screen">
         <BackLink onBack={onBack} />
         <section className="nest">
-          {pet && <PetView pet={pet} />}
+          {pet && <PetView pet={pet} cheer />}
           {prompt.reaction && <p className="bubble">{prompt.reaction}</p>}
-          {prompt.answer_sparks !== null && <p className="reward">{texts.message.reward(prompt.answer_sparks)}</p>}
+          {prompt.answer_sparks !== null && (
+            <p className="reward">
+              <Icon name="spark" />
+              {texts.message.reward(prompt.answer_sparks)}
+            </p>
+          )}
         </section>
-        <section className="card">
+        <section className="card parchment gilded">
+          <Icon name="seal" scale={3} className="seal" />
           <p className="muted small">{card.text}</p>
           <p>
             <b>{texts.message.mine}:</b> {prompt.mine.text}
@@ -93,8 +100,9 @@ export function Message({ prompt, pet, onMe, onUnauthorized, onReveal, onBack }:
   return (
     <main className="screen">
       <BackLink onBack={onBack} />
-      <section className="card">
-        <p className="muted small">{texts.message.kind[card.kind] ?? texts.prompt.title}</p>
+      <section className="card parchment gilded">
+        <Icon name="seal" scale={3} className="seal" />
+        <p className="muted small center-text">{texts.message.kind[card.kind] ?? texts.prompt.title}</p>
         <h2>{card.text}</h2>
         {card.kind === 'closeness' ? (
           <TextAnswer value={text} max={card.max_length} onChange={setText} />

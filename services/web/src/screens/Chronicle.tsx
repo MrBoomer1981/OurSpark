@@ -4,8 +4,12 @@ import { api, call, type Me } from '../api/client';
 import type { components } from '../api/schema';
 import { texts } from '../texts';
 import { BackLink } from '../ui/BackLink';
+import { Icon } from '../ui/Icon';
 
 type Entry = components['schemas']['ChronicleEntryView'];
+
+// Иконка записи по её виду; совпавший выбор и всё незнакомое — страница летописи.
+const ENTRY_ICONS: Record<string, string> = { hatch: 'hatch', stage: 'stage', habit: 'habit', relic: 'relic' };
 
 type Props = { me: Me; onUnauthorized: () => void; onBack: () => void };
 
@@ -35,16 +39,22 @@ export function Chronicle({ me, onUnauthorized, onBack }: Props) {
     <main className="screen">
       <BackLink onBack={onBack} />
       <section className="card">
-        <h2>{texts.chronicle.title}</h2>
+        <h2 className="with-icon">
+          <Icon name="chronicle" />
+          {texts.chronicle.title}
+        </h2>
         {entries === null ? (
           <p className="muted">{failed ? texts.chronicle.failed : texts.chronicle.loading}</p>
         ) : (
           <ol className="list plain">
             {entries.map((entry) => (
-              <li key={entry.id}>
-                <span className="muted small">{date(entry.created_at)}</span>
-                <br />
-                {entry.text}
+              <li key={entry.id} className="entry">
+                <Icon name={ENTRY_ICONS[entry.kind] ?? 'page'} />
+                <span>
+                  <span className="muted small">{date(entry.created_at)}</span>
+                  <br />
+                  {entry.text}
+                </span>
               </li>
             ))}
           </ol>
@@ -54,17 +64,21 @@ export function Chronicle({ me, onUnauthorized, onBack }: Props) {
         <section className="card">
           <h2>{texts.chronicle.relics}</h2>
           <p className="muted small">{texts.chronicle.relicsHint}</p>
-          <ul className="list">
+          <ul className="list plain">
             {pet.relics.map((relic) =>
               relic.found ? (
-                <li key={relic.name}>
-                  <b>{relic.name}</b>
-                  <br />
-                  <span className="muted small">{relic.text}</span>
+                <li key={relic.name} className="entry">
+                  <Icon name="relic" />
+                  <span>
+                    <b>{relic.name}</b>
+                    <br />
+                    <span className="muted small">{relic.text}</span>
+                  </span>
                 </li>
               ) : (
-                <li key={relic.name} className="muted">
-                  {texts.chronicle.relicProgress(relic.theme, relic.progress, relic.needed)}
+                <li key={relic.name} className="entry locked muted">
+                  <Icon name="relic" />
+                  <span>{texts.chronicle.relicProgress(relic.theme, relic.progress, relic.needed)}</span>
                 </li>
               ),
             )}

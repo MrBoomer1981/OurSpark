@@ -1,12 +1,55 @@
-/* Временные цвета до пиксель-готической темы (этап 5). --bg повторяют vite.config.ts и index.html. */
+/*
+ * Тема «пиксельная готика» (ТЗ §10) на временной графике. Цвета — только токенами ниже;
+ * --bg повторяют vite.config.ts и index.html. Графика — через манифест src/assets.ts, см. docs/assets.md.
+ */
+
+/*
+ * Пиксельный шрифт — только заголовки, стадия и искры; кнопки и основной текст — системные, чтобы читались.
+ * Press Start 2P чёткий в размерах, кратных 8 px: 16 и 24. У Pixelify Sans кириллица нечитаема («д» как «а», нет «П»).
+ */
+@font-face {
+  font-family: 'Press Start 2P';
+  src: url('/fonts/press-start-2p-cyrillic.woff2') format('woff2');
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'Press Start 2P';
+  src: url('/fonts/press-start-2p-latin.woff2') format('woff2');
+  font-display: swap;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F,
+    U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
-  --bg: #12131a;
-  --surface: #1c1e2a;
-  --line: #2c2f42;
-  --text: #e9e1d3;
-  --muted: #9a917f;
-  --candle: #f2b866;
-  --wine: #8c3b4a;
+  --bg: #0d0e1a; /* ночная синь — фон */
+  --surface: #181a2b; /* уголь — карточки */
+  --raised: #222540; /* приподнятое: варианты, поля, кнопки второго ряда */
+  --line: #34385a; /* камень — рамки */
+  --line-light: #4a4f78;
+  --text: #ece3d0; /* кость — основной текст */
+  --muted: #a9a6bd; /* туман — второстепенный текст */
+  --candle: #f2b866; /* свет свечи — главное действие и искры */
+  --candle-light: #f8d49b;
+  --candle-deep: #b5782e;
+  --on-candle: #21160a;
+  --wine: #8c3b4a; /* бордо — акценты и опасные действия */
+  --wine-deep: #5e2431;
+  --moss: #8fb086; /* приглушённая зелень — «совпало», «угадано» */
+  --paper: #e6d8b8; /* старая бумага — карточка послания */
+  --paper-light: #f1e7d0;
+  --paper-dark: #d6c49c;
+  --paper-edge: #a8936b;
+  --ink: #2a2017;
+  --ink-muted: #5e4d36;
+  --ink-wine: #7a2f3c;
+  --ink-moss: #355c31; /* «угадано» на бумаге: светлая зелень там не читается */
+
+  --px: 4px; /* «пиксель» рамок: рамки и тени — его кратные */
+  --pixel-font: 'Press Start 2P', system-ui, sans-serif;
+  --pet-size: 160px; /* ровно 4 кадра спрайта (40 px): пиксели увеличиваются целиком и не расплываются */
 
   color-scheme: dark;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -14,6 +57,7 @@
   line-height: 1.45;
   background: var(--bg);
   color: var(--text);
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
@@ -22,6 +66,8 @@ body,
   min-height: 100%;
   margin: 0;
 }
+
+/* ── Раскладка ──────────────────────────────────────────────────────────────── */
 
 .screen {
   box-sizing: border-box;
@@ -36,24 +82,69 @@ body,
 
 .screen.center {
   justify-content: center;
+  align-items: center;
   text-align: center;
+}
+
+.screen.center > * {
+  align-self: stretch;
+}
+
+.screen.center > .icon {
+  align-self: center;
+}
+
+.stack,
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+}
+
+.row > * {
+  flex: 1;
+}
+
+/* ── Текст ──────────────────────────────────────────────────────────────────── */
+
+.title,
+h2 {
+  font-family: var(--pixel-font);
+  font-weight: 400;
 }
 
 .title {
   margin: 0;
-  font-size: 26px;
+  font-size: 24px;
+  line-height: 1.4;
   color: var(--candle);
   text-align: center;
+  text-shadow: 0 4px 0 var(--wine-deep);
 }
 
 h2 {
   margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* Вопрос послания — главное, что читают: системным шрифтом и крупно. */
+.parchment h2 {
+  font-family: inherit;
   font-size: 20px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 h3 {
   margin: 4px 0 0;
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -69,97 +160,195 @@ p {
   font-size: 14px;
 }
 
-.card,
-.nest {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-}
-
-.card.warning {
-  border-color: var(--wine);
-}
-
-.nest {
-  align-items: center;
+.center-text {
   text-align: center;
 }
 
-/* Питомец — стопка слоёв одного размера: стадия и предметы (порядок задаёт манифест). */
-.pet {
-  position: relative;
+.with-icon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.icon {
   flex: none;
-  width: 160px;
-  height: 160px;
-}
-
-.pet.small {
-  width: 96px;
-  height: 96px;
-}
-
-.pet img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
   image-rendering: pixelated;
 }
 
-.growth {
+/* Ошибка или подсказка после действия. */
+.message {
+  color: var(--candle);
+  text-align: center;
+}
+
+/* ── Карточки: пиксельная рамка тенями, углы остаются срезанными ─────────────── */
+
+.card,
+.nest {
+  --card-pad: 16px;
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  margin: var(--px);
+  padding: var(--card-pad);
+  background: var(--surface);
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--line),
+    0 var(--px) 0 0 var(--line),
+    calc(-1 * var(--px)) 0 0 0 var(--line),
+    var(--px) 0 0 0 var(--line),
+    inset 0 var(--px) 0 0 var(--raised);
+}
+
+.card.warning {
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--wine),
+    0 var(--px) 0 0 var(--wine),
+    calc(-1 * var(--px)) 0 0 0 var(--wine),
+    var(--px) 0 0 0 var(--wine),
+    inset 0 var(--px) 0 0 var(--wine-deep);
+}
+
+.nest {
   align-items: center;
-  gap: 6px;
-  width: 100%;
+  text-align: center;
 }
 
-.growth progress {
-  width: 100%;
-  height: 8px;
-  accent-color: var(--candle);
+/* Послание — письмо на старой бумаге под восковой печатью. */
+.parchment {
+  position: relative;
+  padding-top: 32px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--paper-edge),
+    0 var(--px) 0 0 var(--paper-edge),
+    calc(-1 * var(--px)) 0 0 0 var(--paper-edge),
+    var(--px) 0 0 0 var(--paper-edge),
+    inset 0 calc(-1 * var(--px)) 0 0 var(--paper-dark),
+    inset 0 var(--px) 0 0 var(--paper-light);
 }
 
-.invite {
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--bg);
-  font-family: ui-monospace, Menlo, monospace;
-  font-size: 14px;
-  word-break: break-all;
-  user-select: all;
+.parchment .seal {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
 }
+
+/*
+ * Узорная золотая рамка (Gothic Pixel UI, AbyssOwl) для главного: сцены Гнезда и письма-послания.
+ * Углы с узором — из картинки 44×44 (срез 18), прямые стороны растягиваются; всё вдвое, пиксели целые.
+ * Полоса рамки кончается на 18 px от края — ровно там, где начинается фон (background-clip).
+ */
+.gilded {
+  --card-pad: 10px;
+  margin: 0;
+  border: 18px solid transparent;
+  border-image: url('/assets/ui/frame-gold.png') 18 / 36px / 0 stretch;
+  background-clip: padding-box;
+  image-rendering: pixelated;
+  box-shadow: none;
+}
+
+.parchment.gilded {
+  padding-top: 24px;
+  box-shadow:
+    inset 0 calc(-1 * var(--px)) 0 0 var(--paper-dark),
+    inset 0 var(--px) 0 0 var(--paper-light);
+}
+
+.parchment.gilded .seal {
+  top: -22px; /* печать на верхней полосе рамки */
+}
+
+.parchment .muted {
+  color: var(--ink-muted);
+}
+
+.parchment h3 {
+  color: var(--ink-muted);
+}
+
+.parchment .message {
+  color: var(--ink-wine);
+}
+
+.parchment .link {
+  color: var(--ink-muted);
+}
+
+/* ── Кнопки ─────────────────────────────────────────────────────────────────── */
 
 .button {
   box-sizing: border-box;
-  display: block;
-  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: auto;
   min-height: 48px;
-  padding: 12px 16px;
+  margin: var(--px);
+  padding: 10px 16px 14px;
   border: none;
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--candle);
-  color: #1a1306;
+  color: var(--on-candle);
   font: inherit;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
   text-align: center;
   text-decoration: none;
   cursor: pointer;
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--candle-deep),
+    0 var(--px) 0 0 var(--candle-deep),
+    calc(-1 * var(--px)) 0 0 0 var(--candle-deep),
+    var(--px) 0 0 0 var(--candle-deep),
+    inset 0 calc(-1 * var(--px)) 0 0 var(--candle-deep),
+    inset 0 var(--px) 0 0 var(--candle-light);
+}
+
+.button:active:not(:disabled) {
+  padding: 12px 16px;
+  transform: translateY(2px);
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--candle-deep),
+    0 var(--px) 0 0 var(--candle-deep),
+    calc(-1 * var(--px)) 0 0 0 var(--candle-deep),
+    var(--px) 0 0 0 var(--candle-deep);
 }
 
 .button.secondary {
-  background: transparent;
-  border: 1px solid var(--line);
+  background: var(--raised);
   color: var(--text);
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--line),
+    0 var(--px) 0 0 var(--line),
+    calc(-1 * var(--px)) 0 0 0 var(--line),
+    var(--px) 0 0 0 var(--line),
+    inset 0 calc(-1 * var(--px)) 0 0 var(--surface),
+    inset 0 var(--px) 0 0 var(--line-light);
+}
+
+.button.secondary:active:not(:disabled) {
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--line),
+    0 var(--px) 0 0 var(--line),
+    calc(-1 * var(--px)) 0 0 0 var(--line),
+    var(--px) 0 0 0 var(--line);
 }
 
 .button.danger {
   background: var(--wine);
   color: var(--text);
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--wine-deep),
+    0 var(--px) 0 0 var(--wine-deep),
+    calc(-1 * var(--px)) 0 0 0 var(--wine-deep),
+    var(--px) 0 0 0 var(--wine-deep),
+    inset 0 calc(-1 * var(--px)) 0 0 var(--wine-deep);
 }
 
 .button:disabled {
@@ -169,31 +358,440 @@ p {
 
 .link {
   align-self: center;
+  min-height: 44px;
   padding: 8px;
   border: none;
   background: none;
   color: var(--muted);
   font: inherit;
   text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
 }
 
-.confirm,
-.stack {
+.link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.back {
+  align-self: flex-start;
+  min-height: 0;
+  padding: 0;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* ── Варианты ответа и поля ─────────────────────────────────────────────────── */
+
+.options {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
-.row {
+.option {
+  min-height: 52px;
+  margin: 0 var(--px);
+  padding: 12px 14px;
+  border: none;
+  border-radius: 0;
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--line),
+    0 var(--px) 0 0 var(--line),
+    calc(-1 * var(--px)) 0 0 0 var(--line),
+    var(--px) 0 0 0 var(--line);
+}
+
+.option.selected {
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--candle),
+    0 var(--px) 0 0 var(--candle),
+    calc(-1 * var(--px)) 0 0 0 var(--candle),
+    var(--px) 0 0 0 var(--candle),
+    inset 0 0 0 2px var(--candle-deep);
+}
+
+.parchment .option {
+  background: var(--paper-light);
+  color: var(--ink);
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--paper-edge),
+    0 var(--px) 0 0 var(--paper-edge),
+    calc(-1 * var(--px)) 0 0 0 var(--paper-edge),
+    var(--px) 0 0 0 var(--paper-edge);
+}
+
+.parchment .option.selected {
+  background: var(--paper-light);
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--ink-wine),
+    0 var(--px) 0 0 var(--ink-wine),
+    calc(-1 * var(--px)) 0 0 0 var(--ink-wine),
+    var(--px) 0 0 0 var(--ink-wine),
+    inset 0 0 0 2px var(--ink-wine);
+}
+
+.textarea {
+  box-sizing: border-box;
+  width: calc(100% - 2 * var(--px));
+  min-height: 120px;
+  margin: 0 var(--px);
+  padding: 10px 12px;
+  border: none;
+  border-radius: 0;
+  background: var(--paper-light);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--paper-edge),
+    0 var(--px) 0 0 var(--paper-edge),
+    calc(-1 * var(--px)) 0 0 0 var(--paper-edge),
+    var(--px) 0 0 0 var(--paper-edge);
+}
+
+.textarea:focus,
+.option:focus-visible,
+.button:focus-visible,
+.link:focus-visible {
+  outline: 2px dashed var(--candle);
+  outline-offset: 6px;
+}
+
+.parchment .textarea:focus {
+  outline-color: var(--ink-wine);
+}
+
+.counter {
+  align-self: flex-end;
+}
+
+.invite {
+  margin: 0 var(--px);
+  padding: 10px 12px;
+  background: var(--bg);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 14px;
+  word-break: break-all;
+  user-select: all;
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--line),
+    0 var(--px) 0 0 var(--line),
+    calc(-1 * var(--px)) 0 0 0 var(--line),
+    var(--px) 0 0 0 var(--line);
+}
+
+/* ── Гнездо: сцена с питомцем ───────────────────────────────────────────────── */
+
+/* Фон убежища: картинка scene.nest из манифеста, а пока её нет — ночь, луна и земля. */
+.scene {
+  position: relative;
+  align-self: stretch;
   display: flex;
-  gap: 10px;
+  justify-content: center;
+  align-items: flex-end;
+  height: calc(var(--pet-size) + 48px);
+  margin: calc(-1 * var(--card-pad)) calc(-1 * var(--card-pad)) 0;
+  padding-bottom: 24px; /* высота земли: на неё встают лапы */
+  background:
+    radial-gradient(circle at 80% 24%, #e9dfc4 0 11px, transparent 12px),
+    radial-gradient(circle at 80% 24%, rgba(242, 184, 102, 0.16) 0 36px, transparent 64px),
+    linear-gradient(#0a0b15, #1b1d33 72%, #262a46);
+  background-size: auto 100%; /* картинка scene.nest вдвое ниже сцены: рисуется ровно ×2 */
+  background-position: center bottom;
+  image-rendering: pixelated;
+  overflow: hidden;
 }
 
-.message {
-  color: var(--candle);
-  text-align: center;
+.scene::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 24px;
+  background: repeating-linear-gradient(90deg, #1d2034 0 8px, #171a2c 8px 16px);
+  box-shadow: inset 0 var(--px) 0 0 #2b2f4a;
 }
+
+.scene .pet {
+  z-index: 1;
+  /* пустые ряды под лапами уходят в землю: --baseline ставит PetView по манифесту */
+  margin-bottom: calc(-1 * var(--pet-size) * var(--baseline, 0));
+}
+
+/* Питомец — стопка слоёв одного размера: стадия и предметы (порядок задаёт манифест). */
+.pet {
+  position: relative;
+  flex: none;
+  width: var(--pet-size);
+  height: var(--pet-size);
+}
+
+.pet.small {
+  --pet-size: 80px; /* два кадра спрайта */
+}
+
+/* Радость: питомец подпрыгивает целиком, со всеми слоями — косметика не отстаёт. */
+.pet.cheering {
+  animation: hop 0.6s steps(3, jump-none) 2;
+}
+
+@keyframes hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-16px);
+  }
+}
+
+.sprite {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  image-rendering: pixelated;
+}
+
+/* Кадры лежат по горизонтали: картинка растянута на все кадры и сдвигается на один кадр за шаг. */
+.sprite.animated {
+  animation: sprite-frames var(--duration) steps(var(--frames), jump-none) infinite;
+}
+
+@keyframes sprite-frames {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 100% 0;
+  }
+}
+
+/* Реплика питомца: пиксельное облачко с хвостиком к нему. */
+.bubble {
+  position: relative;
+  margin: 12px var(--px) 0;
+  padding: 10px 14px;
+  background: var(--raised);
+  line-height: 1.4;
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--line-light),
+    0 var(--px) 0 0 var(--line-light),
+    calc(-1 * var(--px)) 0 0 0 var(--line-light),
+    var(--px) 0 0 0 var(--line-light);
+}
+
+/* Хвостик облачка — ступенькой из двух «пикселей» к питомцу. */
+.bubble::before,
+.bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  background: var(--line-light);
+}
+
+.bubble::before {
+  top: -8px;
+  width: 12px;
+  height: 4px;
+  margin-left: -6px;
+}
+
+.bubble::after {
+  top: -12px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+}
+
+/* Рост: стадия и полоска до следующей. */
+.growth {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.growth b {
+  font-family: var(--pixel-font);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.bar {
+  position: relative;
+  box-sizing: border-box;
+  width: calc(100% - 2 * var(--px));
+  height: 14px;
+  margin: var(--px);
+  background: var(--bg);
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--line),
+    0 var(--px) 0 0 var(--line),
+    calc(-1 * var(--px)) 0 0 0 var(--line),
+    var(--px) 0 0 0 var(--line);
+}
+
+.bar > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: repeating-linear-gradient(90deg, var(--candle) 0 8px, var(--candle-deep) 8px 10px);
+}
+
+.bar.trait > span {
+  background: repeating-linear-gradient(90deg, var(--moss) 0 8px, #5f7a58 8px 10px);
+}
+
+.sparks,
+.reward {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--pixel-font);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--candle);
+}
+
+/* Искры разлетаются на экране результата. */
+.pet-stage {
+  position: relative;
+}
+
+.burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.burst .icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  opacity: 0;
+  animation: burst 1.4s ease-out var(--delay) both;
+}
+
+@keyframes burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1);
+  }
+}
+
+/* ── Списки ─────────────────────────────────────────────────────────────────── */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.list.plain {
+  padding-left: 0;
+  list-style: none;
+}
+
+/* Строка с иконкой: новости результата, летопись, реликвии, привычки. */
+.entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.entry > .icon {
+  margin-top: 2px;
+}
+
+.entry.locked > .icon {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.quote {
+  padding: 6px 0 6px 12px;
+  border-left: var(--px) solid var(--line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hit {
+  color: var(--moss);
+  font-weight: 600;
+}
+
+.miss {
+  color: var(--muted);
+}
+
+.parchment .hit {
+  color: var(--ink-moss);
+}
+
+.parchment .miss {
+  color: var(--ink-muted);
+}
+
+.parchment .quote {
+  border-left-color: var(--paper-edge);
+}
+
+.trait {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trait-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* ── Питомец: косметика ─────────────────────────────────────────────────────── */
+
+.item-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: calc(100% - 2 * var(--px));
+}
+
+.item-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0 4px;
+}
+
+.item-body .stack {
+  flex: 1;
+}
+
+/* ── Отладочная панель (только с DEBUG) ─────────────────────────────────────── */
 
 .debug {
   position: fixed;
@@ -203,6 +801,7 @@ p {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+  z-index: 10;
 }
 
 .debug-panel {
@@ -210,10 +809,16 @@ p {
   flex-direction: column;
   gap: 8px;
   width: 240px;
+  max-height: 70vh;
+  overflow-y: auto;
   padding: 12px;
   border: 1px dashed var(--muted);
-  border-radius: 10px;
   background: var(--surface);
+}
+
+.debug-panel .button {
+  min-height: 40px;
+  font-size: 15px;
 }
 
 .debug-toggle {
@@ -226,104 +831,18 @@ p {
   cursor: pointer;
 }
 
-.back {
-  align-self: flex-start;
-  padding: 0;
-  text-decoration: none;
-}
+/* Кто просит меньше движения — без анимаций: питомец стоит на первом кадре, искры не разлетаются. */
+@media (prefers-reduced-motion: reduce) {
+  .sprite.animated,
+  .pet.cheering {
+    animation: none;
+  }
 
-.bubble {
-  position: relative;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg);
-  line-height: 1.4;
-}
+  .burst {
+    display: none;
+  }
 
-.options {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.option {
-  min-height: 52px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.option.selected {
-  border-color: var(--candle);
-  box-shadow: inset 0 0 0 1px var(--candle);
-}
-
-.reward {
-  color: var(--candle);
-  font-weight: 600;
-}
-
-.center-text {
-  text-align: center;
-}
-
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding-left: 20px;
-}
-
-.textarea {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 120px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  resize: vertical;
-}
-
-.counter {
-  align-self: flex-end;
-}
-
-.quote {
-  padding: 6px 0 6px 12px;
-  border-left: 2px solid var(--line);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.list.plain {
-  padding-left: 0;
-  list-style: none;
-}
-
-.item-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-}
-
-.item-body {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 10px 0 4px;
-}
-
-.item-body .stack {
-  flex: 1;
+  .button:active:not(:disabled) {
+    transform: none;
+  }
 }

@@ -47,7 +47,7 @@ export const texts = {
 
   complete: {
     together: 'Гнездо на двоих: ты и',
-    sparks: (count: number) => `✦ Искры: ${count}`,
+    sparks: (count: number) => `Искры: ${count}`, // иконка искры — рядом, в разметке
     pet: 'Питомец',
     chronicle: 'Летопись',
     leave: 'Выйти из пары',

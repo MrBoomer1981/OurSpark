@@ -7,7 +7,7 @@ import { texts } from './src/texts.ts';
 // Куда dev-сервер проксирует /api — в том же формате host:port, что у Caddy на Railway.
 // По умолчанию локальный api на порту 8000.
 const apiUpstream = process.env.API_UPSTREAM ?? 'localhost:8000';
-const background = '#12131a'; // как --bg в src/index.css
+const background = '#0d0e1a'; // как --bg в src/index.css
 
 export default defineConfig({
   plugins: [

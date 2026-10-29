@@ -1,11 +1,13 @@
 import { useState } from 'react';
 
 import { api, call, type AppConfig, type Me, type Result } from '../api/client';
+import { pictures } from '../assets';
 import { Growth } from '../pet/Growth';
 import { PetView } from '../pet/PetView';
 import { copyText, shareLink } from '../platform/share';
 import { errorText, texts } from '../texts';
 import { Confirm } from '../ui/Confirm';
+import { Icon } from '../ui/Icon';
 import { InstallOffer } from '../ui/InstallOffer';
 import { NotificationsBanner } from '../ui/NotificationsBanner';
 
@@ -89,9 +91,11 @@ export function Nest(props: Props) {
           {me.prompt && <PromptStatus prompt={me.prompt} {...props} />}
           <div className="row">
             <button className="button secondary" onClick={props.onOpenPet}>
+              <Icon name="pet" />
               {texts.complete.pet}
             </button>
             <button className="button secondary" onClick={props.onOpenChronicle}>
+              <Icon name="chronicle" />
               {texts.complete.chronicle}
             </button>
           </div>
@@ -173,9 +177,12 @@ function Waiting({ pair, busy, onCancel }: { pair: Pair; busy: boolean; onCancel
 }
 
 function Together({ me, pair }: { me: Me; pair: Pair }) {
+  const scene = pictures['scene.nest'];
   return (
-    <section className="nest">
-      {me.pet && <PetView pet={me.pet} />}
+    <section className="nest gilded">
+      <div className="scene" style={scene ? { backgroundImage: `url(${scene.src})` } : undefined}>
+        {me.pet && <PetView pet={me.pet} />}
+      </div>
       {me.pet_line && <p className="bubble">{me.pet_line}</p>}
       <p className="small">
         {texts.complete.together} <b>{pair.partner?.name}</b>
@@ -183,7 +190,10 @@ function Together({ me, pair }: { me: Me; pair: Pair }) {
       {me.pet && (
         <>
           <Growth pet={me.pet} />
-          <p className="muted small">{texts.complete.sparks(me.pet.sparks)}</p>
+          <p className="sparks">
+            <Icon name="spark" />
+            {texts.complete.sparks(me.pet.sparks)}
+          </p>
         </>
       )}
     </section>
@@ -196,7 +206,10 @@ function PromptStatus({ prompt, onOpenMessage, onReveal, onShowResult }: PromptS
   if (prompt.state === 'ASSIGNED') {
     return (
       <section className="card">
-        <h2>{texts.prompt.title}</h2>
+        <h2 className="with-icon">
+          <Icon name="seal" />
+          {texts.prompt.title}
+        </h2>
         <p className="muted small">{texts.message.kind[prompt.card.kind]}</p>
         {prompt.partner_answered && <p className="muted">{texts.prompt.partnerAnswered}</p>}
         <button className="button" onClick={onOpenMessage}>
@@ -208,7 +221,10 @@ function PromptStatus({ prompt, onOpenMessage, onReveal, onShowResult }: PromptS
   if (prompt.state === 'WAITING_FOR_PARTNER') {
     return (
       <section className="card">
-        <h2>{texts.prompt.waitingTitle}</h2>
+        <h2 className="with-icon">
+          <Icon name="seal" />
+          {texts.prompt.waitingTitle}
+        </h2>
         <p className="muted">
           {texts.prompt.yourAnswer}: <b>{short(prompt.mine?.text ?? '')}</b>
         </p>
@@ -218,7 +234,10 @@ function PromptStatus({ prompt, onOpenMessage, onReveal, onShowResult }: PromptS
   if (prompt.state === 'READY_TO_REVEAL' || !prompt.seen) {
     return (
       <section className="card">
-        <h2>{texts.prompt.readyTitle}</h2>
+        <h2 className="with-icon">
+          <Icon name="seal" />
+          {texts.prompt.readyTitle}
+        </h2>
         <button className="button" onClick={onReveal}>
           {texts.prompt.reveal}
         </button>
@@ -227,7 +246,10 @@ function PromptStatus({ prompt, onOpenMessage, onReveal, onShowResult }: PromptS
   }
   return (
     <section className="card">
-      <h2>{texts.prompt.doneTitle}</h2>
+      <h2 className="with-icon">
+        <Icon name="seal" />
+        {texts.prompt.doneTitle}
+      </h2>
       <p className="muted">{texts.prompt.tomorrow}</p>
       <button className="link" onClick={onShowResult}>
         {texts.prompt.showResult}
