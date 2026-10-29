@@ -831,6 +831,67 @@ p {
   cursor: pointer;
 }
 
+/* ── Ожидание и ошибки ──────────────────────────────────────────────────────── */
+
+/* Действие идёт: нажатая кнопка не тускнеет, а показывает бегущие точки (место под них не прыгает). */
+.button[aria-busy='true']:disabled,
+.link[aria-busy='true']:disabled {
+  opacity: 1;
+  cursor: progress;
+}
+
+.button[aria-busy='true']::after,
+.link[aria-busy='true']::after,
+.dots::after {
+  content: '...';
+  display: inline-block;
+  width: 1.2em;
+  text-align: left;
+  clip-path: inset(0 100% 0 0);
+  animation: dots 1.2s steps(4, jump-none) infinite;
+}
+
+@keyframes dots {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* Строка о том, что случилось само (гнездо обновилось, пропала связь): внизу экрана, касание закрывает. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  z-index: 20;
+  box-sizing: border-box;
+  width: calc(100% - 48px);
+  max-width: 432px;
+  margin: 0;
+  padding: 12px 16px;
+  transform: translateX(-50%);
+  background: var(--raised);
+  color: var(--text);
+  text-align: center;
+  cursor: pointer;
+  box-shadow:
+    0 calc(-1 * var(--px)) 0 0 var(--candle-deep),
+    0 var(--px) 0 0 var(--candle-deep),
+    calc(-1 * var(--px)) 0 0 0 var(--candle-deep),
+    var(--px) 0 0 0 var(--candle-deep);
+  animation: toast-in 0.24s steps(3, jump-none) both;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 /* Кто просит меньше движения — без анимаций: питомец стоит на первом кадре, искры не разлетаются. */
 @media (prefers-reduced-motion: reduce) {
   .sprite.animated,
@@ -840,6 +901,14 @@ p {
 
   .burst {
     display: none;
+  }
+
+  .toast,
+  .button[aria-busy='true']::after,
+  .link[aria-busy='true']::after,
+  .dots::after {
+    animation: none;
+    clip-path: none;
   }
 
   .button:active:not(:disabled) {

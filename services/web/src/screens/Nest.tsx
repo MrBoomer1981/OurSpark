@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
-import { api, call, type AppConfig, type Me, type Result } from '../api/client';
+import { api, call, type AppConfig, type Me } from '../api/client';
+import { useAction } from '../api/useAction';
 import { pictures } from '../assets';
 import { Growth } from '../pet/Growth';
 import { PetView } from '../pet/PetView';
@@ -24,6 +25,7 @@ type Props = {
   onMe: (me: Me) => void;
   onInvite: (invite: InviteProblem | null) => void;
   onUnauthorized: () => void;
+  onStale: (code: string) => void;
   onOpenMessage: () => void;
   onReveal: () => void;
   onShowResult: () => void;
@@ -33,27 +35,11 @@ type Props = {
 
 /** Гнездо: нет пары → ждём партнёра → пара в сборе: питомец, послание дня, входы в «Питомца» и «Летопись». */
 export function Nest(props: Props) {
-  const { me, config, invite, onMe, onInvite, onUnauthorized } = props;
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const { me, config, invite, onMe, onInvite, onUnauthorized, onStale } = props;
+  const { run, busy, message, setMessage } = useAction({ onMe, onUnauthorized, onStale });
 
-  /** Действие с ответом-состоянием: при успехе показывает новое состояние, при ошибке — понятный текст. */
-  async function run(request: Promise<Result<Me>>): Promise<boolean> {
-    setBusy(true);
-    setMessage(null);
-    const result = await request;
-    setBusy(false);
-    if (result.ok) {
-      onMe(result.data);
-      return true;
-    }
-    if (result.status === 401) onUnauthorized();
-    else setMessage(errorText(result.code));
-    return false;
-  }
-
-  const create = () => run(call(api.POST('/api/pairs')));
-  const leave = () => run(call(api.POST('/api/pairs/leave')));
+  const create = () => run('create', call(api.POST('/api/pairs')));
+  const leave = () => run('leave', call(api.POST('/api/pairs/leave')));
 
   async function leaveAndJoin(code: string) {
     if (!(await leave())) return;
@@ -123,7 +109,7 @@ function NoPair({ busy, newPairs, onCreate }: { busy: boolean; newPairs: boolean
       {newPairs ? (
         <>
           <p className="muted">{texts.noPair.hint}</p>
-          <button className="button" disabled={busy} onClick={onCreate}>
+          <button className="button" disabled={busy} aria-busy={busy} onClick={onCreate}>
             {texts.noPair.create}
           </button>
         </>

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 
-import { api, call, type Me, type Result } from '../api/client';
+import { api, call, type Me } from '../api/client';
+import { useAction } from '../api/useAction';
 import { PetView, type Pet } from '../pet/PetView';
-import { errorText, texts } from '../texts';
+import { texts } from '../texts';
 import { BackLink } from '../ui/BackLink';
 import { Icon } from '../ui/Icon';
 
@@ -14,6 +15,7 @@ type Props = {
   pet: Pet | null;
   onMe: (me: Me) => void;
   onUnauthorized: () => void;
+  onStale: (code: string) => void;
   onReveal: () => void;
   onBack: () => void;
 };
@@ -22,23 +24,12 @@ type Props = {
  * Послание: карточка и ответ по её типу — вариант, текст или вариант с прогнозом; что увидит партнёр;
  * «Отправить» и «Другой вопрос». После ответа — реакция питомца.
  */
-export function Message({ prompt, pet, onMe, onUnauthorized, onReveal, onBack }: Props) {
+export function Message({ prompt, pet, onMe, onUnauthorized, onStale, onReveal, onBack }: Props) {
   const [option, setOption] = useState<string | null>(null);
   const [prediction, setPrediction] = useState<string | null>(null);
   const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const { run, pending, busy, message } = useAction({ onMe, onUnauthorized, onStale });
   const card = prompt.card;
-
-  async function run(request: Promise<Result<Me>>) {
-    setBusy(true);
-    setMessage(null);
-    const result = await request;
-    setBusy(false);
-    if (result.ok) onMe(result.data);
-    else if (result.status === 401) onUnauthorized();
-    else setMessage(errorText(result.code));
-  }
 
   const ready =
     card.kind === 'closeness'
@@ -50,11 +41,11 @@ export function Message({ prompt, pet, onMe, onUnauthorized, onReveal, onBack }:
       card.kind === 'closeness'
         ? { session_id: prompt.session_id, text }
         : { session_id: prompt.session_id, option, prediction: card.kind === 'guess' ? prediction : null };
-    void run(call(api.POST('/api/prompt/answer', { body })));
+    void run('send', call(api.POST('/api/prompt/answer', { body })));
   }
 
   function change() {
-    void run(call(api.POST('/api/prompt/change', { body: { session_id: prompt.session_id } })));
+    void run('change', call(api.POST('/api/prompt/change', { body: { session_id: prompt.session_id } })));
   }
 
   if (prompt.mine) {
@@ -117,11 +108,11 @@ export function Message({ prompt, pet, onMe, onUnauthorized, onReveal, onBack }:
           <Options card={card} selected={option} onSelect={setOption} />
         )}
         <p className="muted small">{texts.message.privacy[card.kind]}</p>
-        <button className="button" disabled={!ready || busy} onClick={send}>
+        <button className="button" disabled={!ready || busy} aria-busy={pending === 'send'} onClick={send}>
           {texts.message.send}
         </button>
         {prompt.changes_left > 0 && (
-          <button className="link" disabled={busy} onClick={change}>
+          <button className="link" disabled={busy} aria-busy={pending === 'change'} onClick={change}>
             {texts.message.change(prompt.changes_left)}
           </button>
         )}

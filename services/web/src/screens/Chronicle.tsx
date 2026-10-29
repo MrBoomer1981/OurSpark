@@ -17,6 +17,7 @@ type Props = { me: Me; onUnauthorized: () => void; onBack: () => void };
 export function Chronicle({ me, onUnauthorized, onBack }: Props) {
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0); // «Повторить» загружает заново
 
   // Записей со временем много, поэтому их нет в /me: летопись грузится, когда её открывают.
   useEffect(() => {
@@ -30,7 +31,7 @@ export function Chronicle({ me, onUnauthorized, onBack }: Props) {
     return () => {
       alive = false;
     };
-  }, [onUnauthorized]);
+  }, [onUnauthorized, attempt]);
 
   const pet = me.pet;
   const owned = pet?.items.filter((item) => item.state === 'owned') ?? [];
@@ -44,7 +45,22 @@ export function Chronicle({ me, onUnauthorized, onBack }: Props) {
           {texts.chronicle.title}
         </h2>
         {entries === null ? (
-          <p className="muted">{failed ? texts.chronicle.failed : texts.chronicle.loading}</p>
+          failed ? (
+            <>
+              <p className="muted">{texts.chronicle.failed}</p>
+              <button
+                className="button secondary"
+                onClick={() => {
+                  setFailed(false);
+                  setAttempt(attempt + 1);
+                }}
+              >
+                {texts.retry}
+              </button>
+            </>
+          ) : (
+            <p className="muted dots">{texts.chronicle.loading}</p>
+          )
         ) : (
           <ol className="list plain">
             {entries.map((entry) => (

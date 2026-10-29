@@ -1,46 +1,42 @@
 import { useState } from 'react';
 
-import { api, call, type Me, type Result } from '../api/client';
+import { api, call, type Me } from '../api/client';
+import { useAction } from '../api/useAction';
 import { Bar, Growth } from '../pet/Growth';
 import { PetView, type Pet as PetData } from '../pet/PetView';
-import { errorText, texts } from '../texts';
+import { texts } from '../texts';
 import { BackLink } from '../ui/BackLink';
 import { Icon } from '../ui/Icon';
 
 type Item = PetData['items'][number];
 
-type Props = { me: Me; onMe: (me: Me) => void; onUnauthorized: () => void; onBack: () => void };
+type Props = {
+  me: Me;
+  onMe: (me: Me) => void;
+  onUnauthorized: () => void;
+  onStale: (code: string) => void;
+  onBack: () => void;
+};
 
 /** Питомец: стадии, характер и привычки, косметика с примеркой. */
-export function Pet({ me, onMe, onUnauthorized, onBack }: Props) {
+export function Pet({ me, onMe, onUnauthorized, onStale, onBack }: Props) {
   const [open, setOpen] = useState<string | null>(null); // раскрытый предмет — его и примеряем
   const [reaction, setReaction] = useState<{ item: string; text: string } | null>(null); // питомец об обнове
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const { run, pending, busy, message } = useAction({ onMe, onUnauthorized, onStale });
   const pet = me.pet;
   if (!pet) return null;
 
-  async function run(request: Promise<Result<Me>>, onDone: () => void) {
-    setBusy(true);
-    setMessage(null);
-    const result = await request;
-    setBusy(false);
-    if (result.ok) {
-      onMe(result.data);
-      onDone();
-    } else if (result.status === 401) {
-      onUnauthorized();
-    } else {
-      setMessage(errorText(result.code));
+  async function buy(item: Item) {
+    if (await run(`buy:${item.key}`, call(api.POST('/api/pet/buy', { body: { item: item.key } })))) {
+      setReaction({ item: item.key, text: item.line });
     }
   }
 
-  const buy = (item: Item) =>
-    run(call(api.POST('/api/pet/buy', { body: { item: item.key } })), () => setReaction({ item: item.key, text: item.line }));
-  const wear = (item: Item, worn: boolean) =>
-    run(call(api.POST('/api/pet/wear', { body: { item: item.key, worn } })), () =>
-      setReaction(worn ? { item: item.key, text: item.line } : null),
-    );
+  async function wear(item: Item, worn: boolean) {
+    if (await run(`wear:${item.key}`, call(api.POST('/api/pet/wear', { body: { item: item.key, worn } })))) {
+      setReaction(worn ? { item: item.key, text: item.line } : null);
+    }
+  }
 
   return (
     <main className="screen">
@@ -112,6 +108,7 @@ export function Pet({ me, onMe, onUnauthorized, onBack }: Props) {
                   pet={pet}
                   open={open === item.key}
                   busy={busy}
+                  pending={pending}
                   reaction={reaction?.item === item.key ? reaction.text : null}
                   onToggle={() => setOpen(open === item.key ? null : item.key)}
                   onBuy={() => void buy(item)}
@@ -131,6 +128,7 @@ type ItemRowProps = {
   pet: PetData;
   open: boolean;
   busy: boolean;
+  pending: string | null; // какое действие сейчас идёт: buy:<предмет> или wear:<предмет>
   reaction: string | null;
   onToggle: () => void;
   onBuy: () => void;
@@ -138,7 +136,7 @@ type ItemRowProps = {
 };
 
 /** Предмет: строка со статусом; раскрытый — примерка на питомце и действия. */
-function ItemRow({ item, pet, open, busy, reaction, onToggle, onBuy, onWear }: ItemRowProps) {
+function ItemRow({ item, pet, open, busy, pending, reaction, onToggle, onBuy, onWear }: ItemRowProps) {
   const status =
     item.state === 'owned'
       ? item.worn
@@ -161,7 +159,7 @@ function ItemRow({ item, pet, open, busy, reaction, onToggle, onBuy, onWear }: I
             {item.state === 'locked' && <p className="muted small">{requirement(item)}</p>}
             {item.state === 'available' &&
               (pet.sparks >= item.price ? (
-                <button className="button" disabled={busy} onClick={onBuy}>
+                <button className="button" disabled={busy} aria-busy={pending === `buy:${item.key}`} onClick={onBuy}>
                   {texts.pet.buy(item.price)}
                 </button>
               ) : (
@@ -170,7 +168,12 @@ function ItemRow({ item, pet, open, busy, reaction, onToggle, onBuy, onWear }: I
                 </p>
               ))}
             {item.state === 'owned' && (
-              <button className="button secondary" disabled={busy} onClick={() => onWear(!item.worn)}>
+              <button
+                className="button secondary"
+                disabled={busy}
+                aria-busy={pending === `wear:${item.key}`}
+                onClick={() => onWear(!item.worn)}
+              >
                 {item.worn ? texts.pet.takeOff : texts.pet.wear}
               </button>
             )}

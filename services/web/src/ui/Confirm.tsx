@@ -14,7 +14,7 @@ export function Confirm({ label, question, yes, no, busy, onConfirm }: Props) {
   const [asking, setAsking] = useState(false);
   if (!asking) {
     return (
-      <button className="link" disabled={busy} onClick={() => setAsking(true)}>
+      <button className="link" disabled={busy} aria-busy={busy} onClick={() => setAsking(true)}>
         {label}
       </button>
     );

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 
 import './index.css';
 import { App } from './App';
+import { ErrorBoundary } from './ui/ErrorBoundary';
 import { initPlatform, launch } from './platform';
 import { texts } from './texts';
 
@@ -21,6 +22,8 @@ if (launch.mode === 'pwa') {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

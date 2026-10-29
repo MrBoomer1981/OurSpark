@@ -13,16 +13,17 @@ const NONCE_REFRESH_MS = 9 * 60_000;
 const POLL_MS = 2000;
 const DEBUG_USERS = [-1, -2];
 
-type Props = { config: AppConfig; onLoggedIn: () => void };
+type Props = { config: AppConfig; ended: boolean; onLoggedIn: () => void }; // ended — прежний вход больше не действует
 
 /** Вход в PWA через бота: ссылка t.me/<бот>?start=login_<nonce>, подтверждение в боте, токен сессии. */
-export function Login({ config, onLoggedIn }: Props) {
+export function Login({ config, ended, onLoggedIn }: Props) {
   const [login, setLogin] = useState<LoginLink | null>(null);
   const [state, setState] = useState<State>('preparing');
 
   // nonce готовим заранее: тогда «Войти через Telegram» — обычная ссылка,
   // и iOS откроет Telegram с первого нажатия, без промежуточного запроса.
   const prepare = useCallback(async () => {
+    credentials.setPendingLogin(null);
     setState('preparing');
     const result = await call(api.POST('/api/auth/login'));
     if (result.ok) {
@@ -34,7 +35,14 @@ export function Login({ config, onLoggedIn }: Props) {
   }, []);
 
   useEffect(() => {
-    void prepare();
+    // Вернулись из Telegram, а iOS успела выгрузить PWA: ждём подтверждения того же входа.
+    const pending = credentials.pendingLogin();
+    if (pending) {
+      setLogin(pending);
+      setState('waiting');
+    } else {
+      void prepare();
+    }
   }, [prepare]);
 
   useEffect(() => {
@@ -51,9 +59,11 @@ export function Login({ config, onLoggedIn }: Props) {
       const result = await call(api.POST('/api/auth/login/exchange', { body: { nonce: login.nonce } }));
       if (!active) return;
       if (result.ok && result.data.token) {
+        credentials.setPendingLogin(null);
         credentials.setToken(result.data.token);
         onLoggedIn();
       } else if (!result.ok && result.status === 410) {
+        credentials.setPendingLogin(null);
         setState('expired');
       }
     };
@@ -73,6 +83,7 @@ export function Login({ config, onLoggedIn }: Props) {
     <main className="screen center">
       <Icon name="seal" scale={5} />
       <h1 className="title">{texts.appName}</h1>
+      {ended && <p className="message">{texts.login.ended}</p>}
       <p className="muted">{texts.login.lead}</p>
 
       {(state === 'ready' || state === 'waiting') && login && (
@@ -81,7 +92,10 @@ export function Login({ config, onLoggedIn }: Props) {
           href={login.link}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={() => setState('waiting')}
+          onClick={() => {
+            credentials.setPendingLogin(login);
+            setState('waiting');
+          }}
         >
           {state === 'waiting' ? texts.login.again : texts.login.button}
         </a>
