@@ -5,9 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 - **Rebuild in progress.** The project is being rebuilt into «Воронье гнездо»: an asynchronous game in which a couple grows a shared pet. One web app runs as a Telegram Mini App and as a PWA, backed by the services `web`, `api`, `bot` and Railway Postgres. `PLAN.md` is the rebuild plan and the source of truth (decisions, rules, schema, milestones). The product brief is `voronye_gnezdo_mvp_spec.md`; `PLAN.md` wins where they differ.
-- **Milestones 0–4 are pushed (2026-10-22); only 0–1 are deployed.** 0–1 are checked in Telegram with the test bot @Ushousebot, whose Main Mini App is `https://our-home.up.railway.app`. Milestones 2–4 were pushed during a Railway outage. Builds come back in stages (Enterprise, then Pro, then Hobby; this project is on Hobby), and the outage signed the Railway CLI out. So first:
-  1. The user runs `railway login`.
-  2. Make sure `api` and `web` run the latest commit: the api startup log shows `База: применена миграция 2`, `3` and `4`, then `База: схема v4`. If Railway never picked the commit up, deploy it from the dashboard or with `serviceInstanceDeployV2`.
+- **Milestones 0–4 are pushed (2026-10-22); only 0–1 are deployed.** 0–1 are checked in Telegram with the test bot @Ushousebot, whose Main Mini App is `https://our-home.up.railway.app`. Milestones 2–4 were pushed during a Railway outage, and Railway never picked them up for `api` and `web`: checked 2026-10-29, `railway deployment list --service api` (and `web`) still ends with the 0–1 deploy of 2026-10-21, while `bot` and the photo bot list these pushes as SKIPPED, as their Watch Paths require. So first:
+  1. `railway whoami`: the outage signed the CLI out (it was logged in again by 2026-10-29). If it is signed out, the user runs `railway login`.
+  2. Deploy the latest commit to `api` and `web` from the dashboard or with `serviceInstanceDeployV2`. The api startup log then shows `База: применена миграция 2`, `3` and `4`, then `База: схема v4`.
   3. The milestone 2–4 checks inside Telegram and in the iPhone PWA.
   4. Then milestone 5.
 
@@ -18,13 +18,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Plan before code.** Every feature or change starts with a plan: update `PLAN.md` (`docs/photo-bot.md` for the photo bot) or describe the plan in chat, and wait for the user's go. Only then write code. Every rebuild milestone starts with a plan update.
 - **No tests in the repo** — this also overrides brief §15.7. No test files, test dependencies or test steps in plans. Behaviour is checked by hand: the photo bot with `/dev`, the game with the debug panel (both only with `DEBUG=true`). Throwaway verification scripts live outside the repository.
-- **Push = production deploy.** A push to `main` redeploys every Railway service whose Watch Paths match the changed files: the photo bot watches its own files, and `api`, `web` and `bot` each watch `services/<name>/**`. A push that changes only docs redeploys nothing. Commit and push only when the user explicitly says so; after a push, watch the Railway deploy and check the startup log. For the photo bot: `База: применена миграция N` only when the deploy brings a new migration (expected, not an error), then `База: … · пар: … · участников: …` (counts must not drop — nothing was lost), `Темы: …`, `Фичи: … · новые пары: …`, `Планировщик: задач …`. For the game: `api: порт …` and `База: схема vN` (`api`), `Бот: @… · Mini App: …` (`bot`).
+- **Push = production deploy.** A push to `main` redeploys every Railway service whose Watch Paths match the changed files: the photo bot watches its own files, and `api`, `web` and `bot` each watch `services/<name>/**`. A push that changes only docs redeploys nothing. Commit and push only when the user explicitly says so; after a push, watch the Railway deploy and check the startup log. For the photo bot: `База: применена миграция N` only when the deploy brings a new migration (expected, not an error), then `База: … · пар: … · участников: …` (counts must not drop — nothing was lost), `Темы: …`, `Фичи: … · новые пары: …`, `Планировщик: задач …`. For the game: `api: порт …`, `База: схема vN`, `Telegram: @… · новые пары: … · DEBUG: …` and `Контент: карточек N · web push: включён` (`api`; `выключен` means a VAPID variable is missing), `Бот: @… · Mini App: … · api: …` (`bot`).
 - **Languages.** Talk to the user in Russian. `PLAN.md` is written in Russian (the user's request, 2026-10-19), as is `README.md`; the other technical docs (`CLAUDE.md`, `docs/`) are written in English. Code comments and docstrings stay in Russian — do not translate them.
 - **User-facing texts** are Russian and live in one place per kind:
   - `bot/texts.py` — the photo bot;
   - `services/web/src/texts.ts` — the game UI;
   - `services/bot/app/texts.py` — the game bot;
-  - the texts module of `api` — notifications;
+  - `services/api/app/texts.py` — notifications (templates use only `<b>`: the relay strips it for web push);
   - `services/api/content/` — prompt cards and pet lines.
 
   No gendered verb forms for participants («прислал/прислала», «выбрал(а)» are not allowed). Names always stay in the nominative case because the bot cannot decline them («<b>Саша</b>: фото готово», not «фото от Саши»). Prompt cards follow the same rules.
@@ -36,8 +36,8 @@ Photo bot:
 
 ```bash
 pip install -r requirements.txt
-python -m bot          # needs .env (see .env.example) with the token of a SEPARATE test bot
-railway logs           # production logs (this folder is linked to the OurSpark service)
+python -m bot              # needs .env (see .env.example) with the token of a SEPARATE test bot
+railway logs --lines 100   # production logs (this folder is linked to OurSpark); without --lines it streams and never returns
 ```
 
 Deploy = push to `main`; Railway builds the root `Dockerfile` for the photo bot. No linter, formatter or type checker is configured (no `pyproject.toml` or `ruff.toml`).
@@ -52,8 +52,11 @@ uvicorn app.main:app --reload     # api on :8000; /api/docs and the OpenAPI sche
 npm install && npm run dev        # Vite; proxies /api to API_UPSTREAM (default localhost:8000)
 npm run api:types                 # after api changes: src/api/schema.d.ts from the running api (DEBUG=true); commit it
 npm run build                     # tsc for the app and for src/sw.ts, then vite build — the only type checks
-# services/bot: .env with the game's TEST bot token
+# services/bot: venv and requirements as for api; .env with the game's TEST bot token
 python -m app                     # never while the Railway `bot` polls the same token
+# Railway
+railway deployment list --service api      # did a push reach the service (SKIPPED: Watch Paths did not match)
+railway logs --service api --lines 100     # startup log; also web, bot
 ```
 
 Without `BOT_TOKEN` the api starts only with `DEBUG=true`: no Telegram, so the UI is used in a desktop browser through the debug login (stub users).
@@ -85,7 +88,7 @@ Without `BOT_TOKEN` the api starts only with `DEBUG=true`: no Telegram, so the U
 
 What already exists (milestones 0–4):
 
-- **Layers in `api`:** `http/` (routes, models, auth) → `game/` (rules) → `store/` (SQL). Routes that change something return the new `Me`, and `web` replaces its state with it. Rule violations come back as 409 with `{"detail": "<code>"}`; `web` turns codes into texts.
+- **Layers in `api`:** `http/` (routes, models, auth) → `game/` (rules) → `store/` (SQL). `GET /api/me` and every route that changes something return `Me`, built in one place (`http/views.py`), and `web` replaces its state with it; a new field goes into `http/models.py` and `views.py`, then `npm run api:types`. Rule violations come back as 409 with `{"detail": "<code>"}`; `web` turns codes into texts through `texts.errors`, so a new code needs a line there (otherwise the generic error is shown).
 - **Auth** (`services/api/app/http/deps.py`) accepts three schemes:
   - `tma <initData>` — checked with `BOT_TOKEN`, at most a day old;
   - `Bearer <token>` — a PWA session; only its sha256 is stored;
@@ -93,7 +96,7 @@ What already exists (milestones 0–4):
 
   PWA login: `POST /api/auth/login` → `t.me/<bot>?start=login_<nonce>` → the bot asks, then calls `POST /api/internal/login/confirm` with `X-Internal-Secret` → the PWA polls `POST /api/auth/login/exchange`. Caddy answers 404 to `/api/internal/*` from outside.
 - **Pairs** (`game/pairs.py`): locks are taken in one order, the pair row first and then the user row. Joining one's own pair again is not an error. The pet row and the `partner_joined` notification are written in the transaction that completes the pair.
-- **Outbox:** `notify.enqueue` writes into the caller's transaction with a unique key. `notify/relay.py` claims due rows every 2 s (`FOR UPDATE SKIP LOCKED`) and sends them through the Bot API. On 403 or «chat not found» it sets `users.tg_reachable = false` and does not retry. Rows for stub users (negative ids) are just marked sent.
+- **Outbox:** `notify.enqueue` writes into the caller's transaction with a unique key. `notify/relay.py` claims due rows every 2 s (`FOR UPDATE SKIP LOCKED`) and sends them (web push first, otherwise the bot; see **Channels**). Network errors are retried with backoff; on 403 or «chat not found» it sets `users.tg_reachable = false` and does not retry. A claim older than 2 minutes is taken again, so delivery is at-least-once. Rows for stub users (negative ids) are just marked sent. A new kind needs a constant in `app/notify/__init__.py`, a template in `app/texts.py` and an entry in `relay.TEMPLATES` (`render` fills only `{name}`); a kind without a template is marked failed, not retried.
 - **Content** lives in `services/api/content/*.yaml` and is loaded and validated at startup (`app/content`): a broken file stops `api` from starting instead of failing for a pair later.
   - `prompts.yaml` holds the cards; each has a kind and a theme, and an option may carry a chronicle line for when both partners pick it. Kinds:
     - `light` — an option about oneself;
@@ -130,6 +133,7 @@ What already exists (milestones 0–4):
   - Try-on exists only in `web`.
 - **Chronicle** (`game/chronicle.py`): entries are unique per `(pair_id, event_key)` and store a kind plus content keys; the text is rendered from content when shown. The first entry, `hatch`, is written in the transaction that completes the pair (migration 3 added it for existing pairs). `GET /api/chronicle` serves it apart from `/me`, which only carries bounded data.
 - **Pair clock** (`game/clock.py`): the day is the date in the pair's zone (`TIMEZONE`) plus a `DEBUG` day offset stored in `pair_settings` («следующий день» in the debug panel).
+- **Debug panel** (`src/debug/DebugPanel.tsx` in `web`, shown when `GET /api/config` says `debug`; the `/api/debug/*` routes are mounted only with `DEBUG`): a stub partner joins (id `-(1000 + pair_id)`), the partner answers at random, next day, +100 sparks, reset today's prompt, reset the pair's progress (the `hatch` entry stays). It answers for a real partner too, since the stand is a test one. Outside Telegram it also logs in as stub users -1 and -2 and switches between them.
 - **Channels:** the relay tries web push first (`notify/push.py`, VAPID; 404/410 disables a subscription) and falls back to the bot. `POST /api/notifications/push` accepts only endpoints of browser push services. A `tma` request with `allows_write_to_pm` marks the Telegram channel as working.
 - **`web` client:** `src/api/client.ts` adds the auth header, and `call()` returns `{ok, data}` or `{ok: false, status, code}`. Screens: `Nest`, then `Message`, `Result`, `Pet` and `Chronicle` as secondary screens with the Telegram back button (`ui/BackLink`). `pet/PetView` draws the pet in layers from the manifest (`src/assets.ts`): `pet.<stage>`, then each worn item as `item.<key>` or, until it has its own art, the placeholder `slot.<slot>`, ordered by `z`. The service worker is `src/sw.ts` (vite-plugin-pwa `injectManifest`, its own `tsconfig.sw.json`): precache plus the push and notification-click handlers. The service worker is registered only in PWA mode, never inside Telegram. Vite emits the bundle to `/static/` (immutable in Caddy). `public/assets/` holds game art, which is revalidated and referenced only through `src/assets.ts`.
 - **Every `api` route starts with `/api`.** Caddy (`services/web/Caddyfile`) proxies `/api/*` without stripping the prefix, and Vite does the same in dev. `GET /api/health` also checks the database; it is the Railway healthcheck.
@@ -181,7 +185,7 @@ Invariants:
   - `railway add` relinks this folder to the new service, so run `railway service link OurSpark` afterwards.
   - Reference variables (`${{api.RAILWAY_PRIVATE_DOMAIN}}`) resolve at deploy time. A service deployed together with the one it references can get an empty value, as `web`'s `API_UPSTREAM` did (Caddy dialled `:8000`); redeploy it once.
   - Backup schedules need the Pro plan. The project is on Hobby, so neither the game's Postgres nor the photo bot's volume has scheduled backups.
-- Game variables are listed in `PLAN.md` §4. Through milestone 1:
+- Game variables are listed in `PLAN.md` §4. Set on Railway as of milestone 4 (checked 2026-10-29):
   - `api`: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (milestone 2; without all three web push is off), `DATABASE_URL` (a reference to the Postgres variable), `PORT=8000`, `BOT_TOKEN` (a reference, `${{bot.BOT_TOKEN}}`: the token is pasted once, into `bot`), `INTERNAL_SECRET`, `DEBUG=true` while only the test bot exists;
   - `web`: `API_UPSTREAM`;
   - `bot`: `BOT_TOKEN`, `WEB_APP_URL`, `API_URL`, and `INTERNAL_SECRET` as a reference to `api`'s.
